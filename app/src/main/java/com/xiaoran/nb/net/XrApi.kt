@@ -15,9 +15,14 @@ object XrApi {
     // 后端公网地址（已部署到 101.35.2.133:8787，systemd 常驻）
     const val BASE: String = "http://101.35.2.133:8787"
 
-    data class UpdateInfo(val enabled: Boolean, val minVersion: String, val url: String, val force: Boolean)
-    data class StatusInfo(val serviceDisabled: Boolean, val announcement: String, val update: UpdateInfo)
+    data class UpdateInfo(val enabled: Boolean, val minVersion: String, val url: String, val force: Boolean,
+                          val content: String, val image: String)
+    data class StatusInfo(val serviceDisabled: Boolean,
+                          val announceTitle: String, val announceContent: String, val announceIcon: String,
+                          val update: UpdateInfo, val online: Int, val total: Int)
     data class FileItem(val id: String, val name: String, val size: Long, val url: String)
+    data class CsItem(val q: String, val a: String)
+    data class StatsInfo(val online: Int, val total: Int)
 
     private fun post(path: String, json: String, adminKey: String? = null): JSONObject {
         val conn = (URL(BASE + path).openConnection() as HttpURLConnection).apply {
@@ -59,22 +64,42 @@ object XrApi {
     // ---- 状态 / 公告 / 更新 ----
     fun status(): StatusInfo {
         val o = get("/api/status")
+        val a = o.optJSONObject("announcement") ?: JSONObject()
         val u = o.optJSONObject("update") ?: JSONObject()
         return StatusInfo(
             o.optBoolean("serviceDisabled", false),
-            o.optString("announcement", ""),
+            a.optString("title", ""), a.optString("content", ""), a.optString("icon", ""),
             UpdateInfo(u.optBoolean("enabled", false), u.optString("minVersion", "0.0.0"),
-                u.optString("url", ""), u.optBoolean("force", false))
+                u.optString("url", ""), u.optBoolean("force", false),
+                u.optString("content", ""), u.optString("image", "")),
+            o.optInt("online", 0), o.optInt("total", 0)
         )
     }
+    fun stats(): StatsInfo { val o = get("/api/stats"); return StatsInfo(o.optInt("online", 0), o.optInt("total", 0)); }
+    fun csQa(): List<CsItem> {
+        val arr = get("/api/csQa").optJSONArray("qa") ?: return emptyList()
+        val list = ArrayList<CsItem>()
+        for (i in 0 until arr.length()) { val j = arr.optJSONObject(i) ?: continue; list.add(CsItem(j.optString("q", ""), j.optString("a", ""))) }
+        return list
+    }
+    fun csMessage(card: String, device: String, text: String, mediaBase64: String = ""): Boolean =
+        post("/api/cs/message", JSONObject().put("card", card).put("device", device)
+            .put("text", text).put("media", mediaBase64).toString()).optBoolean("ok", false)
 
     // ---- 文件 / 音乐 ----
     fun files(): List<FileItem> = parseFiles(get("/api/files"))
     fun music(): List<FileItem> = parseFiles(get("/api/music"))
-    /** 后端配置的 zip 解压目标目录（"目标设置在后端操作"） */
-    fun importDir(): String = get("/api/config").optString("importDir", "")
-    /** 后端配置的视频背景 URL/路径（为空则前端用本地默认） */
-    fun videoBgUrl(): String = get("/api/config").optString("videoBg", "")
+    /** zip 解压目标目录：新后端 importDir 为对象 {default,pak}，取 .default（旧字符串兜底） */
+    fun importDir(): String {
+        val c = get("/api/config"); val id = c.optJSONObject("importDir")
+        if (id != null) return id.optString("default", "")
+        return c.optString("importDir", "")
+    }
+    /** 视频背景：后端返回 /videoBg（相对路径）→ 拼 BASE 成完整 URL；http 原样；空=用本地默认 */
+    fun videoBgUrl(): String {
+        val v = get("/api/config").optString("videoBg", "")
+        return when { v.startsWith("/") -> BASE + v; v.startsWith("http") -> v; else -> "" }
+    }
 
     /** 上传文件到后端（base64） */
     fun uploadFile(name: String, content: ByteArray, music: Boolean): Boolean {

@@ -360,6 +360,16 @@ Java_com_xiaoran_nb_imgui_ImguiHost_nativeXrDownloadProgress(JNIEnv* env, jobjec
     XrSetDownloadProgress(n ? n : "", pct, done == JNI_TRUE);
     if (n) env->ReleaseStringUTFChars(name, n);
 }
+JNIEXPORT void JNICALL
+Java_com_xiaoran_nb_imgui_ImguiHost_nativeXrStats(JNIEnv* env, jobject, jint online, jint total) {
+    XrPushStats((int)online, (int)total);
+}
+JNIEXPORT void JNICALL
+Java_com_xiaoran_nb_imgui_ImguiHost_nativeXrPushCs(JNIEnv* env, jobject, jstring csv) {
+    const char* c = csv ? env->GetStringUTFChars(csv, nullptr) : nullptr;
+    XrPushCs(c ? c : "");
+    if (c) env->ReleaseStringUTFChars(csv, c);
+}
 
 } // extern "C"
 
@@ -424,6 +434,15 @@ void XHostOpenUrl(const char* url) {
         if (g_jvm->AttachCurrentThread(&env, nullptr) != JNI_OK) return; attached = true;
     }
     CallHostStr(env, env->GetObjectClass(g_activityRef), "openUrl", url);
+    if (attached) g_jvm->DetachCurrentThread();
+}
+void XHostCsMessage(const char* text) {
+    if (g_jvm == nullptr || g_activityRef == nullptr) return;
+    JNIEnv* env = nullptr; bool attached = false;
+    if (g_jvm->GetEnv((void**) &env, JNI_VERSION_1_6) != JNI_OK) {
+        if (g_jvm->AttachCurrentThread(&env, nullptr) != JNI_OK) return; attached = true;
+    }
+    CallHostStr(env, env->GetObjectClass(g_activityRef), "csMessage", text);
     if (attached) g_jvm->DetachCurrentThread();
 }
 void XHostDownload(const char* name, const char* url) {

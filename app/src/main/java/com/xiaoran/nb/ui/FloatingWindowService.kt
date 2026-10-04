@@ -265,8 +265,11 @@ class FloatingWindowService : Service() {
             Thread {
                 try {
                     val s = com.xiaoran.nb.net.XrApi.status()
-                    h.pushService(s.serviceDisabled, s.announcement,
-                        s.update.force, s.update.minVersion, s.update.url)
+                    val ann = buildString {
+                        if (s.announceTitle.isNotEmpty()) append(s.announceTitle)
+                        if (s.announceContent.isNotEmpty()) { if (isNotEmpty()) append(" · "); append(s.announceContent) }
+                    }
+                    h.pushService(s.serviceDisabled, ann, s.update.force, s.update.minVersion, s.update.url)
                 } catch (e: Exception) {
                     h.pushService(false, "", false, "", "")
                 }
@@ -276,6 +279,14 @@ class FloatingWindowService : Service() {
                     h.pushMedia(csv(com.xiaoran.nb.net.XrApi.files()),
                                 csv(com.xiaoran.nb.net.XrApi.music()))
                 } catch (e: Exception) { h.pushMedia("", "") }
+                try {
+                    val st = com.xiaoran.nb.net.XrApi.stats()
+                    h.pushStats(st.online, st.total)
+                } catch (e: Exception) { h.pushStats(0, 0) }
+                try {
+                    val qa = com.xiaoran.nb.net.XrApi.csQa()
+                    h.pushCs(qa.joinToString("\n") { "${it.q}\t${it.a}" })
+                } catch (e: Exception) { h.pushCs("") }
             }.start()
         }
     }

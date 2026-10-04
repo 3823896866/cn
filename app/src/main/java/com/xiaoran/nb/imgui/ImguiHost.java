@@ -81,6 +81,8 @@ public final class ImguiHost {
     private native void nativeXrResetGate();
     private native void nativeXrPushMedia(String files, String music);
     private native void nativeXrDownloadProgress(String name, float pct, boolean done);
+    private native void nativeXrStats(int online, int total);
+    private native void nativeXrPushCs(String csv);
 
     /** Service 把触摸转发给 C++（拖动/收起由 Service 掌控）。 */
     public void forwardTouch(int action, float x, float y) { nativeOnTouch(action, x, y); }
@@ -147,6 +149,19 @@ public final class ImguiHost {
     /** Kotlin 把后端文件/音乐列表推给 C++（"name\turl\n..."）。 */
     public void pushMedia(String filesCsv, String musicCsv) {
         nativeXrPushMedia(filesCsv == null ? "" : filesCsv, musicCsv == null ? "" : musicCsv);
+    }
+    /** 在线/使用人数推给 C++（显示在资源页顶）。 */
+    public void pushStats(int online, int total) { nativeXrStats(online, total); }
+    /** 客服 Q&A（"问题\t回答\n..."）推给 C++ 客服页。 */
+    public void pushCs(String csv) { nativeXrPushCs(csv == null ? "" : csv); }
+    /** C++ 客服页“转人工”：把留言发给后端（自动带当前卡密 + 设备）。 */
+    public void csMessage(String text) {
+        exec.execute(() -> {
+            try {
+                String card = ctx.getSharedPreferences("xiaoran_prefs", Context.MODE_PRIVATE).getString("last_card", "");
+                com.xiaoran.nb.net.XrApi.csMessage(card == null ? "" : card, deviceId(), text, "");
+            } catch (Throwable ignored) {}
+        });
     }
     /** C++ 小染页"视频背景"开关：单独 overlay 播真实视频（清晰、非占位模糊）。 */
     public void videoBg(int on) {

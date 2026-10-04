@@ -312,6 +312,9 @@ void XHostDownload(const char* name, const char* url);
 void XHostPlayMusic(const char* url);
 void XHostStopMusic();
 void XHostVideoBg(int on);   // 开关视频背景（清晰、非模糊）
+void XrPushStats(int online, int total);   // 在线/使用人数（显示在资源页顶）
+void XrPushCs(const char* csv);            // 客服 Q&A（"问题\t回答\n..."）
+void XHostCsMessage(const char* text);      // 客服页“转人工”：把留言发给后端
 void PageAiChat();
 void PageNetCard();
 void PageWorkspaceCard();
