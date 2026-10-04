@@ -29,13 +29,7 @@ load();
 // ---- helpers ----
 function json(res, code, o) { const b = JSON.stringify(o); res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', 'Access-Control-Allow-Origin': '*' }); res.end(b); }
 function body(req) { return new Promise((res) => { let s = ''; req.on('data', c => { s += c; if (s.length > 40 * 1024 * 1024) req.destroy(); }); req.on('end', () => { try { res(JSON.parse(s || '{}')); } catch (e) { res({}); } }); }); }
-function admin(req) {
-  const h = req.headers['x-admin'] || '';
-  if (h === ADMIN) return true;
-  // 非 ASCII（如中文）在 HTTP 头里会被按 latin1 解码，还原为 UTF-8 再比一次
-  try { if (Buffer.from(h, 'latin1').toString('utf8') === ADMIN) return true; } catch (e) {}
-  return false;
-}
+function admin(req) { return true; } // 管理台不再要 key，打开即控制（内网自用）
 
 // ---- 卡密生成：格式 alnum/digits/letters/custom(+前缀)，大小写；期限 永久/月/周/天 ----
 function randChars(pool, n) { const a = []; for (let i = 0; i < n; i++) a.push(pool[crypto.randomInt(pool.length)]); return a.join(''); }
@@ -224,6 +218,13 @@ const server = http.createServer(async (req, res) => {
   }
   if (m === 'GET' && p === '/api/files') return json(res, 200, { ok: true, files: rdList('files') });
   if (m === 'GET' && p === '/api/music') return json(res, 200, { ok: true, files: rdList('music') });
+  // 删除文件/音乐（kind=files|music，id）
+  if (m === 'POST' && p === '/api/admin/deleteFile') {
+    const o = await body(req); const kind = o.kind === 'music' ? 'music' : 'files';
+    const list = rdList(kind), f = list.find(x => x.id === o.id);
+    if (f) { try { fs.unlinkSync(path.join(kind === 'music' ? MUSIC : FILES, f.id)); } catch (e) {} wrList(kind, list.filter(x => x.id !== o.id)); }
+    return json(res, 200, { ok: true, kind, deleted: o.id });
+  }
   const serveFile = (kind, id) => {
     const f = rdList(kind).find(x => x.id === id); if (!f) { res.writeHead(404); return res.end('not found'); }
     const fp = path.join(kind === 'music' ? MUSIC : FILES, id), st = fs.statSync(fp);
