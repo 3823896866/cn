@@ -141,9 +141,9 @@ function loadFiles() { Promise.all([api('/api/files'), api('/api/music')]).then(
   $('music').innerHTML = m.files.map(x => '<div class="it"><span>♪ ' + x.name + ' <span class="pill">' + (x.size / 1024).toFixed(0) + 'KB</span></span><a href="' + B + x.url + '" target="_blank" style="color:var(--b)">试听/下载</a></div>').join('') || '<div class="sub">无</div>'; }); }
 // 客服
 function csAdd() { api('/api/admin/csQa', 'POST', { q: $('csQ').value, a: $('csA').value }).then(loadQa); }
-function loadQa() { api('/api/csQa').then(r => $('csQa').innerHTML = (r.qa || []).map(x => '<div class="it"><span>Q:' + x.q + '</span><span>A:' + x.a + ' <button class="ghost" style="padding:2px 8px" onclick="delQa(\'' + x.id + '\')">删</button></span></div>').join('') || '<div class="sub">无</div>')); }
+function loadQa() { api('/api/csQa').then(r => $('csQa').innerHTML = (r.qa || []).map(x => '<div class="it"><span>Q:' + x.q + '</span><span>A:' + x.a + ' <button class="ghost" style="padding:2px 8px" onclick="delQa(\'' + x.id + '\')">删</button></span></div>').join('') || '<div class="sub">无</div>'); }
 function delQa(id) { api('/api/admin/csQa', 'POST', { del: id }).then(loadQa); }
-function loadInbox() { api('/api/admin/csInbox').then(r => $('inbox').innerHTML = (r.inbox || []).map(x => '<div class="it"><span>[' + new Date(x.ts).toLocaleString() + '] <span class="pill">' + (x.card || '未知卡密') + '</span> 设备:' + (x.device || '?') + '</span><span>' + (x.text || '') + (x.media ? ' [含媒体]' : '') + '</span></div>').join('') || '<div class="sub">暂无留言</div>')); }
+function loadInbox() { api('/api/admin/csInbox').then(r => $('inbox').innerHTML = (r.inbox || []).map(x => '<div class="it"><span>[' + new Date(x.ts).toLocaleString() + '] <span class="pill">' + (x.card || '未知卡密') + '</span> 设备:' + (x.device || '?') + '</span><span>' + (x.text || '') + (x.media ? ' [含媒体]' : '') + '</span></div>').join('') || '<div class="sub">暂无留言</div>'); }
 // 启动
 if (key()) enter();
 setInterval(() => { api('/api/stats').then(s => $('ovOnline').textContent = s.online); }, 30000);
