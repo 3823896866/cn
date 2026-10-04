@@ -1,207 +1,249 @@
-// 小染自动注入 —— 后端（Node，无第三方依赖，node:http 直接跑）
-// 职责：卡密系统（生成/封禁/绑定设备/每卡仅解绑一次）、文件与音乐上传下载(带 Range 进度)、
-//       公告、更新(下载链接+是否强制)、"服务停用"(一键跑路)。非 AI 风格。
+// 小染注入后端 —— 管理控制台 + 客户端 API（Node，无第三方依赖）
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
-const ROOT = __dirname;
-const DATA = path.join(ROOT, 'data');
-const FILES = path.join(DATA, 'files');
-const MUSIC = path.join(DATA, 'music');
+const ROOT = __dirname, DATA = path.join(ROOT, 'data');
+const FILES = path.join(DATA, 'files'), MUSIC = path.join(DATA, 'music'), VID = path.join(DATA, 'videos');
 const STATE = path.join(DATA, 'state.json');
-const ADMIN = process.env.ADMIN_KEY || 'xiaoran-admin';
+const ADMIN = process.env.ADMIN_KEY || '小染nb2026';
+for (const d of [DATA, FILES, MUSIC, VID]) fs.mkdirSync(d, { recursive: true });
 
-for (const d of [DATA, FILES, MUSIC]) fs.mkdirSync(d, { recursive: true });
-
-// ---- 状态（持久化到 state.json）----
+// ---- 状态 ----
 let state = {
-  cards: {},          // key -> {label, createdAt, banned, boundDevice, unbindCount, expiresAt}
-  announcement: '',   // 公告
-  serviceDisabled: false, // 一键跑路：true 时前端显示"无法使用"
-  update: { enabled: false, minVersion: '0.0.0', url: '', force: false },
-  importDir: '',      // zip 解压目标目录（由后端配置，不写进游戏目录）
-  videoBg: '',       // 视频背景的 URL/路径（空则前端用本地默认）
+  cards: {},           // key -> {type, createdAt, expiresAt, banned, banReason, boundDevice, unbindCount}
+  announcement: { title: '', content: '', icon: '' },
+  update: { enabled: false, minVersion: '0.0.0', url: '', force: false, content: '', image: '' },
+  serviceDisabled: false,
+  importDir: { default: '', pak: '' },
+  videoBg: '',
+  cs: { qa: [], inbox: [] },
+  devices: {},        // deviceId -> lastSeenMs
+  totalUsers: 0,
 };
-function load() { try { state = Object.assign({ cards: {} }, JSON.parse(fs.readFileSync(STATE, 'utf8'))); } catch (e) {} }
+function load() { try { state = Object.assign(state, JSON.parse(fs.readFileSync(STATE, 'utf8'))); } catch (e) {} }
 function save() { fs.writeFileSync(STATE, JSON.stringify(state, null, 2)); }
 load();
 
-// ---- 小工具 ----
-function json(res, code, obj) {
-  const b = JSON.stringify(obj);
-  res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', 'Access-Control-Allow-Origin': '*' });
-  res.end(b);
-}
-function body(req) {
-  return new Promise((resolve) => {
-    let s = '';
-    req.on('data', (c) => { s += c; if (s.length > 64 * 1024 * 1024) req.destroy(); });
-    req.on('end', () => { try { resolve(JSON.parse(s || '{}')); } catch (e) { resolve({}); } });
-  });
-}
-function isAuth(req) { return req.headers['x-admin'] === ADMIN; }
-function newKey() {
-  const seg = () => crypto.randomBytes(2).toString('hex').toUpperCase();
-  return `XIAO-${seg()}-${seg()}-${seg()}`;
+// ---- helpers ----
+function json(res, code, o) { const b = JSON.stringify(o); res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', 'Access-Control-Allow-Origin': '*' }); res.end(b); }
+function body(req) { return new Promise((res) => { let s = ''; req.on('data', c => { s += c; if (s.length > 40 * 1024 * 1024) req.destroy(); }); req.on('end', () => { try { res(JSON.parse(s || '{}')); } catch (e) { res({}); } }); }); }
+function admin(req) {
+  const h = req.headers['x-admin'] || '';
+  if (h === ADMIN) return true;
+  // 非 ASCII（如中文）在 HTTP 头里会被按 latin1 解码，还原为 UTF-8 再比一次
+  try { if (Buffer.from(h, 'latin1').toString('utf8') === ADMIN) return true; } catch (e) {}
+  return false;
 }
 
-// ---- 卡密 ----
-function cardVerify(key, deviceId) {
-  const c = state.cards[key];
-  if (!c) return { ok: false, msg: '卡密不存在' };
-  if (c.banned) return { ok: false, msg: '该卡密已被封禁' };
-  if (c.expiresAt && Date.now() > c.expiresAt) return { ok: false, msg: '卡密已过期' };
-  if (c.boundDevice && c.boundDevice !== deviceId) return { ok: false, msg: '该卡密已被其他设备绑定' };
-  c.boundDevice = deviceId || c.boundDevice;
+// ---- 卡密生成：格式 alnum/digits/letters/custom(+前缀)，大小写；期限 永久/月/周/天 ----
+function randChars(pool, n) { const a = []; for (let i = 0; i < n; i++) a.push(pool[crypto.randomInt(pool.length)]); return a.join(''); }
+function genCardKey(fmt, prefix, len, upper) {
+  len = (len | 0) || 6;
+  let pool;
+  if (fmt === 'digits') pool = '0123456789';
+  else if (fmt === 'letters') pool = upper ? 'ABCDEFGHIJKLMNOPQRSTUVWXYZ' : 'abcdefghijklmnopqrstuvwxyz';
+  else if (fmt === 'custom') pool = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  else pool = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'; // alnum
+  let key = '';
+  if (fmt === 'custom' && prefix) key += prefix + '-';
+  key += randChars(pool, len);
+  return key;
+}
+const DUR = { permanent: 0, month: 30, week: 7, day: 1 };
+function genCard(o) {
+  const key = genCardKey(o.format, o.prefix, o.len, o.upper);
+  const days = DUR[o.dur] != null ? DUR[o.dur] : 0;
+  state.cards[key] = {
+    type: o.dur || 'permanent', createdAt: Date.now(),
+    expiresAt: days ? Date.now() + days * 86400000 : 0,
+    banned: false, banReason: '', boundDevice: null, unbindCount: 0, label: o.label || '',
+  };
   save();
-  return { ok: true, msg: '验证通过' };
+  return state.cards[key];
 }
 
 const server = http.createServer(async (req, res) => {
   const u = new URL(req.url, 'http://x');
-  const p = u.pathname;
-  const m = req.method;
+  const p = u.pathname, m = req.method;
 
-  // CORS 预检
   if (m === 'OPTIONS') {
     res.writeHead(204, { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS', 'Access-Control-Allow-Headers': '*' });
     return res.end();
   }
 
-  // ---- 卡密（客户端）----
-  if (m === 'POST' && p === '/api/card/verify') {
-    const b = await body(req);
-    return json(res, 200, cardVerify(String(b.key || ''), String(b.deviceId || '')));
+  // 控制面板
+  if (m === 'GET' && (p === '/' || p === '/admin' || p === '/index.html')) {
+    try { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Access-Control-Allow-Origin': '*' }); return res.end(fs.readFileSync(path.join(ROOT, 'admin.html'))); }
+    catch (e) { res.writeHead(404); return res.end('no admin.html'); }
   }
-  if (m === 'POST' && p === '/api/card/unbind') {   // 每个卡密仅可解绑一次
-    const b = await body(req);
-    const c = state.cards[String(b.key || '')];
+  // 上传的视频背景
+  if (m === 'GET' && p === '/videoBg') {
+    try { const f = path.join(VID, 'bg.mp4'); res.writeHead(200, { 'Content-Type': 'video/mp4', 'Content-Length': fs.statSync(f).size, 'Access-Control-Allow-Origin': '*' }); fs.createReadStream(f).pipe(res); }
+    catch (e) { res.writeHead(404); res.end('no video'); }
+    return;
+  }
+
+  // ============ 卡密：管理 ============
+  if (m === 'POST' && p === '/api/admin/generateCard') {
+    if (!admin(req)) return json(res, 403, { ok: false, msg: '未授权' });
+    const o = await body(req);
+    const c = genCard(o);
+    return json(res, 200, { ok: true, key: Object.keys(state.cards).find(k => state.cards[k] === c) });
+  }
+  if (m === 'POST' && p === '/api/admin/deleteCard') {
+    if (!admin(req)) return json(res, 403, { ok: false, msg: '未授权' });
+    const o = await body(req); delete state.cards[String(o.key || '')]; save();
+    return json(res, 200, { ok: true });
+  }
+  if (m === 'POST' && p === '/api/admin/banCard') {
+    if (!admin(req)) return json(res, 403, { ok: false, msg: '未授权' });
+    const o = await body(req); const c = state.cards[String(o.key || '')];
+    if (!c) return json(res, 200, { ok: false, msg: '卡密不存在' });
+    if (o.ban === false) { c.banned = false; c.banReason = ''; }
+    else { c.banned = true; c.banReason = String(o.reason || ''); }
+    save(); return json(res, 200, { ok: true, banned: c.banned, reason: c.banReason });
+  }
+  if (m === 'GET' && p === '/api/admin/cards') {
+    if (!admin(req)) return json(res, 403, { ok: false, msg: '未授权' });
+    return json(res, 200, { ok: true, cards: state.cards });
+  }
+
+  // ============ 卡密：客户端 ============
+  if (m === 'POST' && p === '/api/card/verify') {
+    const o = await body(req); const c = state.cards[String(o.key || '')];
+    const dev = String(o.deviceId || '');
+    if (!c) return json(res, 200, { ok: false, msg: '卡密不存在' });
+    if (c.banned) return json(res, 200, { ok: false, msg: '已被封禁' + (c.banReason ? '：' + c.banReason : '') });
+    if (c.expiresAt && Date.now() > c.expiresAt) return json(res, 200, { ok: false, msg: '卡密已过期' });
+    if (c.boundDevice && c.boundDevice !== dev) return json(res, 200, { ok: false, msg: '该卡密已被其他设备绑定' });
+    c.boundDevice = dev || c.boundDevice;
+    if (dev) { state.devices[dev] = Date.now(); state.totalUsers = Object.keys(state.devices).length; }
+    save();
+    return json(res, 200, { ok: true, msg: '验证通过', type: c.type });
+  }
+  if (m === 'POST' && p === '/api/card/unbind') {
+    const o = await body(req); const c = state.cards[String(o.key || '')];
     if (!c) return json(res, 200, { ok: false, msg: '卡密不存在' });
     if (c.unbindCount >= 1) return json(res, 200, { ok: false, msg: '每个卡密仅可解绑一次' });
     c.boundDevice = null; c.unbindCount = 1; save();
-    return json(res, 200, { ok: true, msg: '已解绑（该卡密不可再次解绑）' });
+    return json(res, 200, { ok: true, msg: '已解绑' });
+  }
+  if (m === 'POST' && p === '/api/heartbeat') {
+    const o = await body(req); const dev = String(o.deviceId || '');
+    if (dev) { state.devices[dev] = Date.now(); save(); }
+    return json(res, 200, { ok: true });
+  }
+  if (m === 'GET' && p === '/api/stats') {
+    const now = Date.now(); let online = 0;
+    for (const d in state.devices) if (now - state.devices[d] < 5 * 60000) online++;
+    return json(res, 200, { ok: true, online, total: state.totalUsers || Object.keys(state.devices).length });
   }
 
-  // ---- 状态（客户端拉取）----
+  // ============ 状态（客户端拉取）============
   if (m === 'GET' && p === '/api/status') {
     return json(res, 200, {
       serviceDisabled: state.serviceDisabled,
       announcement: state.announcement,
       update: state.update,
+      online: (() => { let n = 0, now = Date.now(); for (const d in state.devices) if (now - state.devices[d] < 5 * 60000) n++; return n; })(),
+      total: state.totalUsers,
     });
   }
 
-  // ---- 管理（生成/封禁/公告/更新/停用）----
-  if (m === 'POST' && p === '/api/admin/generateCard') {
-    if (!isAuth(req)) return json(res, 403, { ok: false, msg: '未授权' });
-    const b = await body(req);
-    const key = newKey();
-    state.cards[key] = { label: String(b.label || ''), createdAt: Date.now(), banned: false, boundDevice: null, unbindCount: 0, expiresAt: b.expiresInDays ? Date.now() + b.expiresInDays * 86400000 : 0 };
-    save();
-    return json(res, 200, { ok: true, key, card: state.cards[key] });
-  }
-  if (m === 'POST' && p === '/api/admin/banCard') {
-    if (!isAuth(req)) return json(res, 403, { ok: false, msg: '未授权' });
-    const b = await body(req); const c = state.cards[String(b.key || '')];
-    if (!c) return json(res, 200, { ok: false, msg: '卡密不存在' });
-    c.banned = !c.banned; save();
-    return json(res, 200, { ok: true, banned: c.banned });
-  }
-  if (m === 'GET' && p === '/api/admin/cards') {
-    if (!isAuth(req)) return json(res, 403, { ok: false, msg: '未授权' });
-    return json(res, 200, { ok: true, cards: state.cards });
+  // ============ 配置 / 公告 / 更新 / 视频 / 目录 ============
+  if (m === 'GET' && p === '/api/config') {
+    return json(res, 200, { ok: true, importDir: state.importDir, videoBg: '/videoBg' });
   }
   if (m === 'POST' && p === '/api/admin/announce') {
-    if (!isAuth(req)) return json(res, 403, { ok: false, msg: '未授权' });
-    const b = await body(req); state.announcement = String(b.text || ''); save();
+    if (!admin(req)) return json(res, 403, { ok: false, msg: '未授权' });
+    const o = await body(req); state.announcement = { title: String(o.title || ''), content: String(o.content || ''), icon: String(o.icon || '') }; save();
     return json(res, 200, { ok: true });
   }
   if (m === 'POST' && p === '/api/admin/update') {
-    if (!isAuth(req)) return json(res, 403, { ok: false, msg: '未授权' });
-    const b = await body(req);
-    state.update = { enabled: !!b.enabled, minVersion: String(b.minVersion || '0.0.0'), url: String(b.url || ''), force: !!b.force };
-    save();
-    return json(res, 200, { ok: true, update: state.update });
+    if (!admin(req)) return json(res, 403, { ok: false, msg: '未授权' });
+    const o = await body(req);
+    state.update = { enabled: !!o.enabled, minVersion: String(o.minVersion || '0.0.0'), url: String(o.url || ''), force: !!o.force, content: String(o.content || ''), image: String(o.image || '') };
+    save(); return json(res, 200, { ok: true, update: state.update });
   }
   if (m === 'POST' && p === '/api/admin/disable') {
-    if (!isAuth(req)) return json(res, 403, { ok: false, msg: '未授权' });
-    const b = await body(req); state.serviceDisabled = !!b.on; save();
+    if (!admin(req)) return json(res, 403, { ok: false, msg: '未授权' });
+    const o = await body(req); state.serviceDisabled = !!o.on; save();
     return json(res, 200, { ok: true, serviceDisabled: state.serviceDisabled });
   }
+  if (m === 'POST' && p === '/api/admin/setImportDir') {
+    if (!admin(req)) return json(res, 403, { ok: false, msg: '未授权' });
+    const o = await body(req); state.importDir[String(o.which || 'default')] = String(o.path || ''); save();
+    return json(res, 200, { ok: true, importDir: state.importDir });
+  }
+  if (m === 'POST' && p === '/api/admin/uploadVideo') {
+    if (!admin(req)) return json(res, 403, { ok: false, msg: '未授权' });
+    const o = await body(req); if (!o.contentBase64) return json(res, 400, { ok: false, msg: '缺少 contentBase64' });
+    fs.writeFileSync(path.join(VID, 'bg.mp4'), Buffer.from(o.contentBase64, 'base64'));
+    save(); return json(res, 200, { ok: true, videoBg: '/videoBg' });
+  }
 
-  // ---- 文件 / 音乐（上传 + 列表 + 下载，下载支持 Range 进度条）----
-  const manifest = (kind) => path.join(DATA, kind === 'music' ? 'music.json' : 'files.json');
-  const readList = (kind) => { try { return JSON.parse(fs.readFileSync(manifest(kind), 'utf8')); } catch (e) { return []; } };
-  const writeList = (kind, arr) => fs.writeFileSync(manifest(kind), JSON.stringify(arr, null, 2));
+  // ============ 客服（问答 + 留言收件箱）============
+  if (m === 'GET' && p === '/api/csQa') {
+    return json(res, 200, { ok: true, qa: state.cs.qa });
+  }
+  if (m === 'POST' && p === '/api/admin/csQa') {
+    if (!admin(req)) return json(res, 403, { ok: false, msg: '未授权' });
+    const o = await body(req);
+    if (o.del) { state.cs.qa = state.cs.qa.filter(x => x.id !== o.del); save(); return json(res, 200, { ok: true }); }
+    state.cs.qa.push({ id: crypto.randomBytes(4).toString('hex'), q: String(o.q || ''), a: String(o.a || '') }); save();
+    return json(res, 200, { ok: true, qa: state.cs.qa });
+  }
+  // 客户端：用户把消息发给客服（含卡密/设备标识 + 文本 + 媒体dataurl）
+  if (m === 'POST' && p === '/api/cs/message') {
+    const o = await body(req);
+    state.cs.inbox.push({ ts: Date.now(), card: String(o.card || ''), device: String(o.device || ''), text: String(o.text || ''), media: o.media ? String(o.media).slice(0, 500000) : '' });
+    if (state.cs.inbox.length > 500) state.cs.inbox = state.cs.inbox.slice(-500);
+    save();
+    return json(res, 200, { ok: true, msg: '已转人工，留言看到会回复' });
+  }
+  if (m === 'GET' && p === '/api/admin/csInbox') {
+    if (!admin(req)) return json(res, 403, { ok: false, msg: '未授权' });
+    return json(res, 200, { ok: true, inbox: state.cs.inbox.slice().reverse() });
+  }
 
+  // ============ 文件 / 音乐（分开）============
+  const manifest = (k) => path.join(DATA, k === 'music' ? 'music.json' : 'files.json');
+  const rdList = (k) => { try { return JSON.parse(fs.readFileSync(manifest(k), 'utf8')); } catch (e) { return []; } };
+  const wrList = (k, a) => fs.writeFileSync(manifest(k), JSON.stringify(a, null, 2));
   if (m === 'POST' && (p === '/api/file/upload' || p === '/api/music/upload')) {
     const kind = p.endsWith('/music/upload') ? 'music' : 'files';
-    const b = await body(req);
-    if (!b.contentBase64) return json(res, 400, { ok: false, msg: '缺少 contentBase64' });
-    const name = String(b.name || 'file').replace(/[\/\\:*?"<>|]/g, '_');
+    const o = await body(req); if (!o.contentBase64) return json(res, 400, { ok: false, msg: '缺少 contentBase64' });
+    const name = String(o.name || 'file').replace(/[\/\\:*?"<>|]/g, '_');
     const id = crypto.randomBytes(6).toString('hex');
-    const fp = path.join(kind === 'music' ? MUSIC : FILES, id);
-    fs.writeFileSync(fp, Buffer.from(b.contentBase64, 'base64'));
-    const list = readList(kind);
-    list.push({ id, name, size: fs.statSync(fp).size, url: kind === 'music' ? '/api/music/' + id : '/api/files/' + id, at: Date.now() });
-    writeList(kind, list);
-    return json(res, 200, { ok: true, id, name, url: kind === 'music' ? '/api/music/' + id : '/api/files/' + id });
+    fs.writeFileSync(path.join(kind === 'music' ? MUSIC : FILES, id), Buffer.from(o.contentBase64, 'base64'));
+    const list = rdList(kind); list.push({ id, name, size: fs.statSync(path.join(kind === 'music' ? MUSIC : FILES, id)).size, url: (kind === 'music' ? '/api/music/' : '/api/files/') + id, at: Date.now() });
+    wrList(kind, list);
+    return json(res, 200, { ok: true, id, name, url: (kind === 'music' ? '/api/music/' : '/api/files/') + id });
   }
-  if (m === 'GET' && p === '/api/files') return json(res, 200, { ok: true, files: readList('files') });
-  if (m === 'GET' && p === '/api/music') return json(res, 200, { ok: true, files: readList('music') });
-
-  const serve = (kind, id) => {
-    const list = readList(kind); const f = list.find((x) => x.id === id);
-    if (!f) { res.writeHead(404); return res.end('not found'); }
-    const fp = path.join(kind === 'music' ? MUSIC : FILES, id);
-    const st = fs.statSync(fp);
-    const startHeader = req.headers['range'];
-    if (startHeader) {
-      const mrg = /bytes=(\d*)-(\d*)/.exec(startHeader);
-      let start = mrg && mrg[1] ? parseInt(mrg[1], 10) : 0;
-      let end = mrg && mrg[2] ? parseInt(mrg[2], 10) : st.size - 1;
-      if (end > st.size - 1) end = st.size - 1;
-      res.writeHead(206, {
-        'Content-Type': kind === 'music' ? 'audio/*' : 'application/octet-stream',
-        'Content-Range': `bytes ${start}-${end}/${st.size}`,
-        'Content-Length': end - start + 1,
-        'Access-Control-Allow-Origin': '*',
-        'Content-Disposition': `attachment; filename="${f.name}"`,
-      });
-      fs.createReadStream(fp, { start, end }).pipe(res);
+  if (m === 'GET' && p === '/api/files') return json(res, 200, { ok: true, files: rdList('files') });
+  if (m === 'GET' && p === '/api/music') return json(res, 200, { ok: true, files: rdList('music') });
+  const serveFile = (kind, id) => {
+    const f = rdList(kind).find(x => x.id === id); if (!f) { res.writeHead(404); return res.end('not found'); }
+    const fp = path.join(kind === 'music' ? MUSIC : FILES, id), st = fs.statSync(fp);
+    const rg = req.headers['range'];
+    if (rg) {
+      const mrg = /bytes=(\d*)-(\d*)/.exec(rg); let s = mrg && mrg[1] ? +mrg[1] : 0, e = mrg && mrg[2] ? +mrg[2] : st.size - 1;
+      if (e > st.size - 1) e = st.size - 1;
+      res.writeHead(206, { 'Content-Type': kind === 'music' ? 'audio/*' : 'application/octet-stream', 'Content-Range': `bytes ${s}-${e}/${st.size}`, 'Content-Length': e - s + 1, 'Access-Control-Allow-Origin': '*', 'Content-Disposition': `attachment; filename="${f.name}"` });
+      fs.createReadStream(fp, { start: s, end: e }).pipe(res);
     } else {
-      res.writeHead(200, {
-        'Content-Type': kind === 'music' ? 'audio/*' : 'application/octet-stream',
-        'Content-Length': st.size,
-        'Accept-Ranges': 'bytes',
-        'Access-Control-Allow-Origin': '*',
-        'Content-Disposition': `attachment; filename="${f.name}"`,
-      });
+      res.writeHead(200, { 'Content-Type': kind === 'music' ? 'audio/*' : 'application/octet-stream', 'Content-Length': st.size, 'Accept-Ranges': 'bytes', 'Access-Control-Allow-Origin': '*', 'Content-Disposition': `attachment; filename="${f.name}"` });
       fs.createReadStream(fp).pipe(res);
     }
   };
-  if (m === 'GET' && p.startsWith('/api/files/')) { return serve('files', p.slice('/api/files/'.length)); }
-  if (m === 'GET' && p.startsWith('/api/music/')) { return serve('music', p.slice('/api/music/'.length)); }
-
-  if (m === 'GET' && p === '/api/config') {
-    return json(res, 200, { ok: true, importDir: state.importDir || '', videoBg: state.videoBg || '' });
-  }
-  if (m === 'POST' && p === '/api/admin/setImportDir') {
-    if (!isAuth(req)) return json(res, 403, { ok: false, msg: '未授权' });
-    const b = await body(req); state.importDir = String(b.path || ''); save();
-    return json(res, 200, { ok: true, importDir: state.importDir });
-  }
-  if (m === 'POST' && p === '/api/admin/setVideoBg') {
-    if (!isAuth(req)) return json(res, 403, { ok: false, msg: '未授权' });
-    const b = await body(req); state.videoBg = String(b.url || ''); save();
-    return json(res, 200, { ok: true, videoBg: state.videoBg });
-  }
+  if (m === 'GET' && p.startsWith('/api/files/')) return serveFile('files', p.slice(8));
+  if (m === 'GET' && p.startsWith('/api/music/')) return serveFile('music', p.slice(9));
 
   res.writeHead(404, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ ok: false, msg: 'not found' }));
 });
 
 const PORT = process.env.PORT || 8787;
-server.listen(PORT, () => console.log('[xiaoran] server on http://127.0.0.1:' + PORT + '  admin key: ' + (process.env.ADMIN_KEY ? '(env)' : ADMIN)));
+server.listen(PORT, () => console.log('[小染注入后端] http://127.0.0.1:' + PORT + '  admin=' + (process.env.ADMIN_KEY ? '(env)' : '小染nb2026')));
