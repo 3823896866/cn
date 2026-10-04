@@ -55,7 +55,7 @@ function genCard(o) {
     banned: false, banReason: '', boundDevice: null, unbindCount: 0, label: o.label || '',
   };
   save();
-  return state.cards[key];
+  return key;
 }
 
 const server = http.createServer(async (req, res) => {
@@ -83,8 +83,27 @@ const server = http.createServer(async (req, res) => {
   if (m === 'POST' && p === '/api/admin/generateCard') {
     if (!admin(req)) return json(res, 403, { ok: false, msg: '未授权' });
     const o = await body(req);
-    const c = genCard(o);
-    return json(res, 200, { ok: true, key: Object.keys(state.cards).find(k => state.cards[k] === c) });
+    const key = genCard(o);
+    return json(res, 200, { ok: true, key });
+  }
+  // 批量生成
+  if (m === 'POST' && p === '/api/admin/generateBatch') {
+    if (!admin(req)) return json(res, 403, { ok: false, msg: '未授权' });
+    const o = await body(req);
+    const n = Math.min(Math.max(parseInt(o.count, 10) || 1, 1), 500);
+    const keys = [];
+    for (let i = 0; i < n; i++) keys.push(genCard(o));
+    return json(res, 200, { ok: true, keys });
+  }
+  // 批量删除
+  if (m === 'POST' && p === '/api/admin/deleteCards') {
+    if (!admin(req)) return json(res, 403, { ok: false, msg: '未授权' });
+    const o = await body(req);
+    const arr = Array.isArray(o.keys) ? o.keys : String(o.keys || '').split(',');
+    let del = 0;
+    for (const k of arr) { const key = String(k).trim(); if (state.cards[key]) { delete state.cards[key]; del++; } }
+    save();
+    return json(res, 200, { ok: true, deleted: del });
   }
   if (m === 'POST' && p === '/api/admin/deleteCard') {
     if (!admin(req)) return json(res, 403, { ok: false, msg: '未授权' });
