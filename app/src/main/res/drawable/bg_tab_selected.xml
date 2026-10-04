@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Tab选中：薄荷绿渐变 pill -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <gradient
+        android:angle="0"
+        android:endColor="@color/primary_light"
+        android:startColor="@color/primary" />
+    <corners android:radius="14dp" />
+</shape>

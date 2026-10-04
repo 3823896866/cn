@@ -1,0 +1,13 @@
+# ============================================
+# local.properties 示例 —— 复制本文件为 local.properties 并修改
+# 指向你电脑上的 Android SDK 路径
+# ============================================
+
+# Windows 示例（反斜杠要转义成双反斜杠）
+# sdk.dir=C\:\\Users\\你的用户名\\AppData\\Local\\Android\\Sdk
+
+# Linux / macOS 示例
+# sdk.dir=/home/你的用户名/Android/Sdk
+
+# Termux 示例
+# sdk.dir=/data/data/com.termux/files/usr/share/android-sdk

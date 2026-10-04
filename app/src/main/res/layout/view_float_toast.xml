@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 自制悬浮消息通知：深色圆角长条，宽度自适应 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/toast_root"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:background="@drawable/bg_float_toast"
+    android:elevation="16dp"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:paddingHorizontal="18dp"
+    android:paddingVertical="12dp">
+
+    <ImageView
+        android:id="@+id/iv_toast_icon"
+        android:layout_width="20dp"
+        android:layout_height="20dp"
+        android:src="@drawable/ic_check_white"
+        android:contentDescription="通知图标" />
+
+    <TextView
+        android:id="@+id/tv_toast_text"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:text="操作成功"
+        android:textColor="@color/white"
+        android:textSize="14sp"
+        android:maxLines="1" />
+</LinearLayout>

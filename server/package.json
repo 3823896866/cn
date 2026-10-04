@@ -1,0 +1,8 @@
+{
+  "name": "xiaoran-nb-server",
+  "version": "1.0.0",
+  "private": true,
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "note": "无第三方依赖，Node 18+ 直接 node server.js；ADMIN_KEY/PORT 用环境变量控制"
+}

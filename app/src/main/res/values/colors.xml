@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 毛玻璃面板底色（93%不透明，配合动态模糊） -->
+    <color name="bg_main">#EDF5E6</color>
+    <color name="bg_panel">#E8F4E4</color>
+    <color name="bg_card">#FAFDF7</color>
+    <!-- 主色：薄荷绿渐变 -->
+    <color name="primary">#4CAF7D</color>
+    <color name="primary_dark">#2E7D54</color>
+    <color name="primary_light">#81C9A4</color>
+    <color name="secondary">#AED581</color>
+    <color name="accent">#00C2A8</color>
+    <!-- 文字 -->
+    <color name="text_primary">#26322B</color>
+    <color name="text_secondary">#6B7A6F</color>
+    <color name="text_light">#9AA8A0</color>
+    <!-- 边框 -->
+    <color name="border_light">#D5E4D2</color>
+    <color name="white">#FFFFFF</color>
+    <color name="transparent">#00000000</color>
+</resources>
