@@ -172,9 +172,9 @@ fun AiChatPage(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text("AI 助手", fontSize = 28.sp, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.onBackground)
+                Text("小染助手", fontSize = 28.sp, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.onBackground)
                 Spacer(Modifier.height(4.dp))
-                Text("雷电法军 · 小米 MiMo · 上下文 188 字", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("小染 · 后端在线 · 上下文 188 字", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             // 手动清空按钮
             Text(
@@ -211,7 +211,7 @@ fun AiChatPage(
                             color = MaterialTheme.colorScheme.primary
                         )
                         Spacer(Modifier.width(8.dp))
-                        Text("雷电法军思考中…", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("小染思考中…", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
@@ -230,7 +230,7 @@ fun AiChatPage(
                 modifier = Modifier
                     .weight(1f)
                     .clip(RoundedCornerShape(22.dp)),
-                placeholder = { Text("问雷电法军点什么…", fontSize = 14.sp) },
+                placeholder = { Text("问小染点什么…", fontSize = 14.sp) },
                 singleLine = true,
                 colors = TextFieldDefaults.colors(
                     focusedContainerColor = Color.White,
