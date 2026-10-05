@@ -65,6 +65,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -396,7 +397,9 @@ private fun VideoBackground() {
     }
     DisposableEffect(Unit) {
         player.setMediaItem(
-            androidx.media3.common.MediaItem.fromUri(context, com.xiaoran.nb.R.raw.home_bg)
+            androidx.media3.common.MediaItem.fromUri(
+                android.net.Uri.parse("android.resource://${context.packageName}/raw/home_bg")
+            )
         )
         player.repeatMode = androidx.media3.common.Player.REPEAT_MODE_ALL
         player.prepare()
@@ -408,10 +411,6 @@ private fun VideoBackground() {
             androidx.media3.ui.PlayerView(it).apply {
                 setPlayer(player)
                 resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-                setControllerVisibilityMode(
-                    androidx.media3.ui.PlayerView.VISIBILITY_MODE_GONE
-                )
-                setShowSubtitleView(false)
                 setKeepScreenOn(true)
             }
         },
@@ -553,7 +552,7 @@ private fun InjectPage(zone: String, files: List<com.xiaoran.nb.ui.model.Resourc
         EnterAnimation(0) {
             Text("$zone 注入", fontSize = 28.sp, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.onBackground)
             Spacer(Modifier.height(6.dp))
-            Text("选择一个$zone区文件并选择导入方式后点击注入", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("选择一个${zone}区文件并选择导入方式后点击注入", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(16.dp))
         }
 

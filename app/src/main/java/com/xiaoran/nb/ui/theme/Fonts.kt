@@ -13,9 +13,9 @@ object AppFonts {
 
     val options = listOf(
         Option("默认", FontFamily.SansSerif),
-        Option("iOS 精致", FontFamily.SansSerifMedium),
+        Option("iOS 精致", FontFamily.SansSerif),
         Option("衬线", FontFamily.Serif),
-        Option("圆体", FontFamily.Casual),
+        Option("圆体", FontFamily.Cursive),
         Option("等宽", FontFamily.Monospace)
     )
 
