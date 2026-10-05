@@ -1,6 +1,7 @@
 package com.xiaoran.nb.ui.launcher
 
 import androidx.compose.foundation.background
+import com.xiaoran.nb.ui.glass.liquidGlass
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -125,7 +126,7 @@ object XiaoMiAi {
 
     /** 从 prefs 反序列化 */
     fun load(raw: String?): List<Msg> {
-        if (raw.isNullOrBlank()) return listOf(Msg("assistant", "我是雷电法军⚡ 小米 AI 已就位，有什么想问的？"))
+        if (raw.isNullOrBlank()) return listOf(Msg("assistant", "我是小染客服，有什么不懂的问题来问我吧，小染祝你天天开心\n小提示：输入转人工会有真实的客服回复哦～"))
         return try {
             val arr = JSONArray(raw)
             (0 until arr.length()).map { i ->
@@ -133,7 +134,7 @@ object XiaoMiAi {
                 Msg(o.optString("r"), o.optString("c"))
             }
         } catch (e: Exception) {
-            listOf(Msg("assistant", "我是雷电法军⚡ 小米 AI 已就位，有什么想问的？"))
+            listOf(Msg("assistant", "我是小染客服，有什么不懂的问题来问我吧，小染祝你天天开心\n小提示：输入转人工会有真实的客服回复哦～"))
         }
     }
 }
@@ -233,8 +234,8 @@ fun AiChatPage(
                 placeholder = { Text("问小染点什么…", fontSize = 14.sp) },
                 singleLine = true,
                 colors = TextFieldDefaults.colors(
-                    focusedContainerColor = Color.White,
-                    unfocusedContainerColor = Color.White,
+                    focusedContainerColor = Color.White.copy(alpha = 0.6f),
+                    unfocusedContainerColor = Color.White.copy(alpha = 0.5f),
                     focusedIndicatorColor = Color.Transparent,
                     unfocusedIndicatorColor = Color.Transparent,
                     cursorColor = MaterialTheme.colorScheme.primary
@@ -245,8 +246,7 @@ fun AiChatPage(
             Box(
                 modifier = Modifier
                     .size(46.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primary)
+                    .liquidGlass(23.dp, MaterialTheme.colorScheme.primary)
                     .clickable {
                         val text = input.trim()
                         if (text.isEmpty() || loading) return@clickable
