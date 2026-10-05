@@ -407,9 +407,7 @@ class FloatingWindowService : Service() {
         }
 
         // Compose 液态玻璃面板（替代原 XML 面板 view_floating_panel）
-        val composeView = androidx.compose.ui.platform.createAndroidComposeView(
-            this, kotlinx.coroutines.Dispatchers.Main
-        ) {
+        val composeView = androidx.compose.ui.platform.AndroidComposeView.create(this) {
             com.xiaoran.nb.ui.theme.MikasaTheme {
                 com.xiaoran.nb.ui.glass.GlassFloatingPanel(
                     onClose = { hideFloatingWindow() },
