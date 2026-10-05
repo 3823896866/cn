@@ -454,6 +454,11 @@ private fun HomePage(
             Spacer(Modifier.height(20.dp))
         }
 
+        // 小染客服（后端在线，可人工接管）
+        EnterAnimation(40) {
+            CsServiceCard()
+        }
+
         EnterAnimation(80) {
             Row(
                 modifier = Modifier
