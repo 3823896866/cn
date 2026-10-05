@@ -32,7 +32,7 @@ fun liquidGlassBrush(base: Color, alpha: Float = 0.6f): Brush =
 /** 液态玻璃修饰：柔影 + 圆角裁切 + 玻璃渐变 + 顶部高光描边。保持原尺寸与位置。 */
 fun Modifier.liquidGlass(corner: Dp = 24.dp, base: Color = Color.White, alpha: Float = 0.6f): Modifier =
     this
-        .shadow(corner / 5f, RoundedCornerShape(corner), Color(0x40000000), clip = false)
+        .shadow(corner / 5f, RoundedCornerShape(corner), clip = false)
         .clip(RoundedCornerShape(corner))
         .background(liquidGlassBrush(base, alpha))
         .border(
