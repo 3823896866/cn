@@ -19,6 +19,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import com.xiaoran.nb.ui.glass.liquidGlass
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -131,6 +132,7 @@ fun MainScreen() {
     // ── AI 聊天状态（提升到此处：滑动页面不丢失；持久化：退出 App 仍在） ──
     var aiMessages by remember { mutableStateOf(XiaoMiAi.load(prefs.getString("ai_chat", null))) }
     var aiLoading by remember { mutableStateOf(false) }
+    var csSeenCount by remember { mutableStateOf(0) }
 
     fun persistChat(list: List<XiaoMiAi.Msg>) {
         prefs.edit().putString("ai_chat", XiaoMiAi.save(list)).apply()
@@ -153,6 +155,19 @@ fun MainScreen() {
             aiMessages = next
             persistChat(next)
             aiLoading = false
+            // 修复：同步后端会话计数 + 轮询人工客服回复（/api/cs/sessions）
+            val cur = withContext(Dispatchers.IO) { com.xiaoran.nb.ui.model.BackendCs.sessionMessages(session) }
+            if (cur != null) csSeenCount = cur.size
+            repeat(30) {
+                kotlinx.coroutines.delay(5000)
+                val msgs = withContext(Dispatchers.IO) { com.xiaoran.nb.ui.model.BackendCs.sessionMessages(session) } ?: return@repeat
+                val fresh = msgs.drop(csSeenCount).filter { it.role == "agent" || it.role == "bot" }.map { it.text }
+                if (fresh.isNotEmpty()) {
+                    fresh.forEach { m -> aiMessages = aiMessages + XiaoMiAi.Msg("assistant", m) }
+                    persistChat(aiMessages)
+                    csSeenCount = msgs.size
+                }
+            }
         }
     }
 
@@ -409,9 +424,7 @@ private fun AppCard(
 ) {
     Box(
         modifier = modifier
-            .shadow(4.dp, RoundedCornerShape(24.dp), clip = false)
-            .clip(RoundedCornerShape(24.dp))
-            .background(backgroundColor)
+            .liquidGlass(24.dp, backgroundColor)
             .padding(20.dp),
         content = { content() }
     )
@@ -457,11 +470,6 @@ private fun HomePage(
             Text("小染", fontSize = 34.sp, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.onBackground)
             Text("悬浮窗控制台", fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(20.dp))
-        }
-
-        // 小染客服（后端在线，可人工接管）
-        EnterAnimation(40) {
-            CsServiceCard()
         }
 
         EnterAnimation(80) {
@@ -561,8 +569,7 @@ private fun HomePage(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(54.dp)
-                    .clip(RoundedCornerShape(18.dp))
-                    .background(MaterialTheme.colorScheme.primary)
+                    .liquidGlass(18.dp, MaterialTheme.colorScheme.primary)
                     .clickable(onClick = onLaunch),
                 contentAlignment = Alignment.Center
             ) {
@@ -582,9 +589,7 @@ private fun HomePage(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(50.dp)
-                    .clip(RoundedCornerShape(18.dp))
-                    .background(Color.White)
-                    .border(1.5.dp, Color(0xFFE0E0E0), RoundedCornerShape(18.dp))
+                    .liquidGlass(18.dp, Color.White)
                     .clickable(onClick = onStop),
                 contentAlignment = Alignment.Center
             ) {
