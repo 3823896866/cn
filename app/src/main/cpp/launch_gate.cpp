@@ -137,7 +137,7 @@ static void DrawCardGate() {
         XHostCardVerify(g_xCardInput);
     }
     if (g_xCardMsg[0]) {
-        bool ok = (g_xCardMsg[0] == '通' || g_xCardMsg[0] == '验');
+        bool ok = g_xCardOk;
         ImGui::PushStyleColor(ImGuiCol_Text, Md3U32(ok ? P.Primary : P.Tertiary));
         ImGui::TextUnformatted(g_xCardMsg);
         ImGui::PopStyleColor();
