@@ -48,7 +48,7 @@ jobs:
         run: echo "sdk.dir=${ANDROID_SDK_ROOT:-$ANDROID_HOME}" > local.properties
 
       - name: Assemble debug APK
-        run: ./gradlew :app:assembleDebug --no-daemon --stacktrace
+        run: sh ./gradlew :app:assembleDebug --no-daemon --stacktrace
         env:
           GRADLE_OPTS: "-Xmx3072m"
 
