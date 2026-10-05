@@ -202,9 +202,10 @@ public final class ImguiHost {
 
     /** C++ 文件页"下载"：入参 "name\turl"，下到 importDir（后端配置），带进度回调。 */
     public void download(String nameTabUrl) {
-        String name = nameTabUrl, url = "";
+        String n0 = nameTabUrl, u0 = "";
         int t = nameTabUrl.indexOf('\t');
-        if (t > 0) { name = nameTabUrl.substring(0, t); url = nameTabUrl.substring(t + 1); }
+        if (t > 0) { n0 = nameTabUrl.substring(0, t); u0 = nameTabUrl.substring(t + 1); }
+        final String name = n0, url = u0;
         exec.execute(() -> {
             java.io.File dir = new java.io.File(com.xiaoran.nb.net.XrApi.INSTANCE.importDir());
             if (dir == null || !dir.exists()) dir = ctx.getExternalFilesDir("imports");
