@@ -258,8 +258,8 @@ const server = http.createServer(async (req, res) => {
       fs.createReadStream(fp).pipe(res);
     }
   };
-  if (m === 'GET' && p.startsWith('/api/files/')) return serveFile('files', p.slice(8));
-  if (m === 'GET' && p.startsWith('/api/music/')) return serveFile('music', p.slice(9));
+  if (m === 'GET' && p.startsWith('/api/files/')) return serveFile('files', p.slice(11));
+  if (m === 'GET' && p.startsWith('/api/music/')) return serveFile('music', p.slice(11));
 
   res.writeHead(404, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ ok: false, msg: 'not found' }));
