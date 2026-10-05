@@ -29,7 +29,6 @@ android {
     externalNativeBuild {
         cmake {
             path "src/main/cpp/CMakeLists.txt"
-            arguments "-DANDROID_STL=c++_static"
         }
     }
 
