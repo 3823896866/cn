@@ -17,10 +17,10 @@ implementation 'org.luaj:luaj-jse:3.0.1'
 
 ### 2. 创建插件加载器
 
-新建 `app/src/main/java/com/mikasa/ui/plugin/LuaPluginLoader.kt`：
+新建 `app/src/main/java/com/xiaoran/nb/ui/plugin/LuaPluginLoader.kt`：
 
 ```kotlin
-package com.mikasa.ui.plugin
+package com.xiaoran.nb.ui.plugin
 
 import android.content.Context
 import org.luaj.vm2.Globals

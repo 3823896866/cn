@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>客服 · 小染管理</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="topbar">
+  <span class="brand">小染 · 管理</span>
+  <nav>
+    <a href="/index.html">首页</a>
+    <a href="/cards.html">卡密</a>
+    <a href="/announce.html">公告</a>
+    <a href="/update.html">更新</a>
+    <a href="/files.html">文件</a>
+    <a href="/cs.html" class="active">客服</a>
+    <a href="/settings.html">设置</a>
+  </nav>
+</div>
+<div class="wrap">
+  <h1 class="page">客服系统</h1>
+  <p class="sub">查看前端用户消息/图片/卡密/到期时间/设备信息，回复消息，并配置自动问答。</p>
+
+  <div class="card">
+    <h2>会话列表</h2>
+    <div class="tablewrap"><table>
+      <thead><tr><th>会话</th><th>状态</th><th>卡密</th><th>卡密到期</th><th>设备</th><th>时间</th><th>消息数</th></tr></thead>
+      <tbody id="tb"></tbody>
+    </table></div>
+  </div>
+
+  <div class="card">
+    <h2>对话与回复</h2>
+    <p class="muted" id="pickHint">请选择上方一个会话查看对话</p>
+    <div id="msgs"></div>
+    <label>回复消息</label><textarea id="replyText" placeholder="输入回复…"></textarea>
+    <label>上传图片（可选）</label><input id="replyImg" type="file" accept="image/*">
+    <button class="btn" onclick="reply()">发送回复</button>
+  </div>
+
+  <div class="card">
+    <h2>自动问答配置（用户消息含「问题」关键词时机器人自动回答）</h2>
+    <div id="qaList"></div>
+    <div class="row" style="margin-top:10px">
+      <div><label>问题关键词</label><input id="qaQ" type="text" placeholder="如：退款"></div>
+      <div><label>回答内容</label><input id="qaA" type="text" placeholder="回答"></div>
+    </div>
+    <button class="btn" onclick="addQa()">添加问答</button>
+    <button class="btn ghost" onclick="saveQa()">保存全部问答</button>
+  </div>
+
+  <div class="msg" id="m">就绪</div>
+</div>
+<script src="/js/api.js"></script>
+<script>
+let cur = ""; let qa = [];
+async function loadSessions() {
+  const rows = await req("GET", "/api/cs/sessions");
+  document.getElementById("tb").innerHTML = rows.map(s => {
+    const card = s.card || {};
+    const st = s.status === "human" ? '<span class="tag no">待人工</span>' :
+               s.status === "agent" ? '<span class="tag ok">已回复</span>' : '<span class="tag zone">机器人</span>';
+    return `<tr style="cursor:pointer" onclick="openSes('${esc(s.id)}')">
+      <td>${esc(s.id)}</td><td>${st}</td>
+      <td><code>${esc(s.cardKey)||'-'}</code></td>
+      <td>${card.expiresAt||'-'}</td>
+      <td>${esc(s.device)||'-'}</td>
+      <td>${esc(s.createdAt)}</td>
+      <td>${s.messages.length}</td>
+    </tr>`;
+  }).join("") || '<tr><td colspan="7" class="muted">暂无会话</td></tr>';
+}
+async function openSes(id) {
+  cur = id;
+  const rows = await req("GET", "/api/cs/sessions");
+  const s = rows.find(x => x.id === id); if (!s) return;
+  const card = s.card || {};
+  document.getElementById("pickHint").innerHTML =
+    `会话 <code>${esc(id)}</code> · 卡密 <code>${esc(s.cardKey)||'-'}</code> · 到期 ${card.expiresAt||'-'}` +
+    ` · 设备 <code>${esc(s.device)||'-'}</code>`;
+  document.getElementById("msgs").innerHTML = (s.messages||[]).map(m => {
+    const who = m.role === "user" ? "用户" : m.role === "bot" ? "机器人" : "客服";
+    const bg = m.role === "agent" ? "#eaf1ff" : m.role === "user" ? "#fff" : "#f4f5f7";
+    return `<div style="border:1px solid #d9dce1;border-radius:4px;padding:8px;margin-bottom:8px;background:${bg}">
+      <b style="color:#2f6fed">${who}</b> <span class="muted" style="font-size:12px">${esc(m.at)}</span>
+      <div style="margin-top:4px">${esc(m.text) || '<span class="muted">(仅图片)</span>'}</div>
+      ${m.image ? `<img class="preview" src="/uploads/${encodeURIComponent(m.image)}">` : ""}
+    </div>`;
+  }).join("") || '<p class="muted">暂无消息</p>';
+}
+async function reply() {
+  if (!cur) { msg(document.getElementById("m"), "请先选择会话", false); return; }
+  let img = "";
+  const f = document.getElementById("replyImg").files[0];
+  if (f) img = "data:image/png;base64," + await fileToB64(f);
+  await req("POST", "/api/cs/reply", { sessionId: cur, text: document.getElementById("replyText").value, image: img });
+  document.getElementById("replyText").value = ""; document.getElementById("replyImg").value = "";
+  msg(document.getElementById("m"), "已回复", true); openSes(cur); loadSessions();
+}
+function addQa() {
+  qa.push({ q: document.getElementById("qaQ").value, a: document.getElementById("qaA").value });
+  document.getElementById("qaQ").value = ""; document.getElementById("qaA").value = ""; renderQa();
+}
+function delQa(i) { qa.splice(i, 1); renderQa(); }
+function renderQa() {
+  document.getElementById("qaList").innerHTML = qa.map((x, i) =>
+    `<div class="row" style="border:1px solid #d9dce1;padding:6px;margin-bottom:6px">
+      <div style="flex:2"><code>${esc(x.q)}</code></div><div style="flex:3">${esc(x.a)}</div>
+      <button class="btn small danger" onclick="delQa(${i})">删</button></div>`).join("");
+}
+async function saveQa() {
+  const data = { list: qa };
+  await req("POST", "/api/cs/qa", data);
+  msg(document.getElementById("m"), "问答已保存", true);
+}
+(async () => {
+  qa = await req("GET", "/api/cs/qa") || []; renderQa(); loadSessions();
+})().catch(e => msg(document.getElementById("m"), "加载失败 " + e.message, false));
+</script>
+</body>
+</html>

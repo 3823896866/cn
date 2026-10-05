@@ -4,6 +4,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
+import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
@@ -81,10 +82,12 @@ private fun colorsFor(theme: AiTheme, dark: Boolean) = if (dark) {
 fun MikasaTheme(
     aiTheme: AiTheme = AiTheme.Default,
     darkTheme: Boolean = isSystemInDarkTheme(),
+    fontStyle: Int = 0,
     content: @Composable () -> Unit
 ) {
     MaterialTheme(
         colorScheme = colorsFor(aiTheme, darkTheme),
+        typography = AppFonts.typography(fontStyle),
         content = content
     )
 }

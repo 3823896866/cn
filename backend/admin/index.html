@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>小染自动注入 · 管理</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="topbar">
+  <span class="brand">小染 · 管理</span>
+  <nav>
+    <a href="/index.html" class="active">首页</a>
+    <a href="/cards.html">卡密</a>
+    <a href="/announce.html">公告</a>
+    <a href="/update.html">更新</a>
+    <a href="/files.html">文件</a>
+    <a href="/cs.html">客服</a>
+<a href="/settings.html">设置</a>
+  </nav>
+</div>
+<div class="wrap">
+  <h1 class="page">功能导航</h1>
+  <p class="sub">每个功能一个独立页面，点击进入管理。</p>
+  <div class="card">
+    <table>
+      <thead><tr><th>功能</th><th>说明</th><th>入口</th></tr></thead>
+      <tbody>
+        <tr><td>卡密</td><td>生成 / 删除 / 封禁 / 解封，查看生成与使用时间</td><td><a class="btn small" href="/cards.html">管理</a></td></tr>
+        <tr><td>公告</td><td>主标题 + 内容 + 上传图片</td><td><a class="btn small" href="/announce.html">管理</a></td></tr>
+        <tr><td>更新</td><td>软件图标 / 版本 / 下载链接 / 内容</td><td><a class="btn small" href="/update.html">管理</a></td></tr>
+        <tr><td>文件</td><td>功能文件 / 美化文件，可创建与上传</td><td><a class="btn small" href="/files.html">管理</a></td></tr>
+        <tr><td>设置</td><td>一键关闭软件 / 导入路径（默认 / pak）</td><td><a class="btn small" href="/settings.html">管理</a></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="card">
+    <h2>服务状态</h2>
+    <div id="st" class="msg">加载中…</div>
+  </div>
+</div>
+<script src="/js/api.js"></script>
+<script>
+(async () => {
+  const s = await req("GET", "/api/settings");
+  document.getElementById("st").textContent =
+    (s.softwareEnabled ? "软件：启用" : "软件：已关闭（前端不可用）") +
+    " · 默认导入路径：" + (s.importPathDefault || "未设置") +
+    " · pak导入路径：" + (s.importPathPak || "未设置");
+})().catch(e => document.getElementById("st").textContent = "连接失败：" + e.message);
+</script>
+</body>
+</html>

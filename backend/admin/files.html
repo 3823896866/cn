@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>文件 · 小染管理</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="topbar">
+  <span class="brand">小染 · 管理</span>
+  <nav>
+    <a href="/index.html">首页</a>
+    <a href="/cards.html">卡密</a>
+    <a href="/announce.html">公告</a>
+    <a href="/update.html">更新</a>
+    <a href="/files.html" class="active">文件</a>
+    <a href="/cs.html">客服</a>
+<a href="/settings.html">设置</a>
+  </nav>
+</div>
+<div class="wrap">
+  <h1 class="page">文件管理</h1>
+  <p class="sub">功能文件 / 美化文件。可创建条目或上传实际文件，前端对应注入页会显示。</p>
+
+  <div class="card">
+    <h2>创建 / 上传文件</h2>
+    <div class="row">
+      <div><label>名称</label><input id="name" type="text" placeholder="例如 注入插件_v2.lua"></div>
+      <div><label>分区</label>
+        <select id="zone"><option>功能</option><option>美化</option></select>
+      </div>
+    </div>
+    <label>文件（可选，选择则上传；不选则仅创建条目）</label>
+    <input id="file" type="file">
+    <button class="btn" onclick="create()">保存文件</button>
+  </div>
+
+  <div class="card">
+    <h2>功能文件</h2><div id="func"></div>
+  </div>
+  <div class="card">
+    <h2>美化文件</h2><div id="beauty"></div>
+  </div>
+  <div class="msg" id="m">就绪</div>
+</div>
+<script src="/js/api.js"></script>
+<script>
+async function create() {
+  try {
+    let data = "", size = "";
+    const f = document.getElementById("file").files[0];
+    if (f) { data = await fileToB64(f); size = Math.round(f.size / 1024) + "KB"; }
+    await req("POST", "/api/files", {
+      name: document.getElementById("name").value,
+      zone: document.getElementById("zone").value,
+      data, size
+    });
+    msg(document.getElementById("m"), "已保存", true);
+    document.getElementById("name").value = ""; document.getElementById("file").value = "";
+    load();
+  } catch (e) { msg(document.getElementById("m"), e.message, false); }
+}
+async function del(id) { if (confirm("删除该文件？")) { await req("DELETE", `/api/files/${id}`); load(); } }
+function row(r) {
+  const link = r.storagePath ? `<a class="btn small ghost" href="/uploads/${encodeURIComponent(r.storagePath)}">下载</a> ` : "";
+  return `<tr>
+    <td>${esc(r.name)}</td><td>${esc(r.size) || '<span class="muted">-</span>'}</td>
+    <td>${esc(r.createdAt)}</td>
+    <td>${link}<button class="btn small danger" onclick="del(${r.id})">删除</button></td>
+  </tr>`;
+}
+async function load() {
+  const all = await req("GET", "/api/files");
+  const table = (arr) => arr.length ?
+    `<div class="tablewrap"><table><thead><tr><th>名称</th><th>大小</th><th>创建时间</th><th>操作</th></tr></thead>
+     <tbody>${arr.map(row).join("")}</tbody></table></div>` : '<p class="muted">暂无</p>';
+  document.getElementById("func").innerHTML = table(all.filter(f => f.zone === "功能"));
+  document.getElementById("beauty").innerHTML = table(all.filter(f => f.zone === "美化"));
+}
+load();
+</script>
+</body>
+</html>
