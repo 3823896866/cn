@@ -1,12 +1,6 @@
 package com.xiaoran.nb.ui.launcher
 
-import android.content.Context
-import android.graphics.BitmapFactory
-import android.net.Uri
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -43,88 +37,79 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.xiaoran.nb.ui.model.MikasaApi
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.BufferedReader
+import java.io.InputStreamReader
+import java.net.HttpURLConnection
+import java.net.URL
 
 /**
- * 小染助手 —— 本地 AI（无需联网、无 API Key）
- * - 基于关键词的本地响应引擎
- * - 上下文限制 200 字（超出自动裁剪最早消息）
+ * 小米 AI 助手「雷电法军」
+ * - 接入小米 MiMo 大模型 API（OpenAI 兼容格式，模型 mimo-v2.5）
+ * - 上下文限制 188 字（超出自动裁剪最早消息）
  */
 object XiaoMiAi {
+    private const val API_URL = "https://api.xiaomimimo.com/v1/chat/completions"
+    private const val API_KEY = "sk-c4oqh9sz2p3cghn4f1c4ubqhng64ghwuqy0vm6rdb0hepr1q"
+    private const val MODEL = "mimo-v2.5"
+
+    // 助手人设
+    private val SYSTEM_PROMPT =
+        "你是雷电法军，小染 的 AI 助手，说话简洁有趣，用中文回复，喜欢用'喵'结尾。"
 
     data class Msg(val role: String, val content: String)
 
-    /** 本地响应（无需网络） */
+    /** 调小米 MiMo API（阻塞，需在协程中调用） */
     fun chat(messages: List<Msg>): String {
-        val lastUser = messages.lastOrNull { it.role == "user" }?.content ?: ""
+        val payload = JSONObject().apply {
+            put("model", MODEL)
+            put("messages", JSONArray().apply {
+                put(JSONObject().put("role", "system").put("content", SYSTEM_PROMPT))
+                messages.forEach { put(JSONObject().put("role", it.role).put("content", it.content)) }
+            })
+            put("temperature", 0.7)
+            put("max_tokens", 512)
+        }
 
-        return when {
-            lastUser.contains("你好") || lastUser.contains("嗨") ||
-            lastUser.contains("hello", true) || lastUser.contains("hi", true) ->
-                "你好呀～我是小染，你的本地 AI 助手！有什么我能帮你的吗？喵～"
+        val conn = URL(API_URL).openConnection() as HttpURLConnection
+        return try {
+            conn.requestMethod = "POST"
+            conn.connectTimeout = 15000
+            conn.readTimeout = 30000
+            conn.setRequestProperty("Content-Type", "application/json")
+            conn.setRequestProperty("Authorization", "Bearer $API_KEY")
+            conn.doOutput = true
+            conn.outputStream.use { it.write(payload.toString().toByteArray()) }
 
-            lastUser.contains("你是谁") ->
-                "我是小染，MikasaUI 的本地 AI 助手，无需联网就能使用！喵～"
-
-            lastUser.contains("功能") || lastUser.contains("介绍") ->
-                "MikasaUI 的功能包括：\n" +
-                "· 悬浮球 + 控制面板（可拖动、缩放、折叠组）\n" +
-                "· 灵动岛（帧率/温度/电量/音乐）\n" +
-                "· 在线音乐搜索播放\n" +
-                "· 音量键控制 UI 显隐\n" +
-                "· 防录屏自动隐藏\n" +
-                "· 文件下载\n" +
-                "· 液态玻璃主题"
-
-            lastUser.contains("音乐") ->
-                "在「音乐」页可以搜索网易云歌曲，支持在线播放和歌词！喵～"
-
-            lastUser.contains("灵动岛") ->
-                "灵动岛是仿 iOS 的顶部胶囊，点击展开可看时间/帧率/温度/电量/歌曲，动画有3档流畅度可选！喵～"
-
-            lastUser.contains("下载") || lastUser.contains("文件") ->
-                "「文件」页支持下载资源文件，左上角有刷新按钮。喵～"
-
-            lastUser.contains("shizuku", true) ->
-                "Shizuku 可以在无 Root 的情况下提供更高权限，「权限」页有授权入口！喵～"
-
-            lastUser.contains("谢谢") || lastUser.contains("感谢") ->
-                "不客气～有问题随时找小染！喵～"
-
-            lastUser.contains("帮助") || lastUser.contains("help", true) ->
-                "试试问我：\n· 功能介绍\n· 音乐怎么搜\n· 灵动岛怎么用\n· 文件下载\n我都在这里等你！喵～"
-
-            lastUser.isNotEmpty() ->
-                "收到你的消息「$lastUser」！我是小染，本地 AI 助手，你试试问我「功能介绍」或「音乐怎么用」？喵～"
-
-            else ->
-                "我是小染，MikasaUI 的本地 AI 助手。发点什么跟我聊聊吧！喵～"
+            if (conn.responseCode in 200..299) {
+                val text = BufferedReader(InputStreamReader(conn.inputStream)).readText()
+                val json = JSONObject(text)
+                json.getJSONArray("choices").getJSONObject(0)
+                    .getJSONObject("message").getString("content").trim()
+            } else {
+                val err = BufferedReader(InputStreamReader(conn.errorStream)).readText()
+                "请求失败(${conn.responseCode})：${err.take(80)}"
+            }
+        } catch (e: Exception) {
+            "网络异常：${e.message ?: "未知错误"}"
+        } finally {
+            conn.disconnect()
         }
     }
 
-    /** 客服系统：优先走后端（可被人工接管/配置问答）；连不上后端则回退本地关键词回复 */
-    fun reply(messages: List<Msg>, cardKey: String, device: String, sessionId: String, image: String = ""): String {
-        val lastUser = messages.lastOrNull { it.role == "user" }?.content ?: ""
-        val remote = MikasaApi.csSend(cardKey, device, lastUser, image, sessionId)
-        return if (remote != null) remote else chat(messages)
-    }
-
-    /** 裁剪上下文到 200 字以内 */
+    /** 裁剪上下文到 188 字以内 */
     fun trimContext(messages: List<Msg>): List<Msg> {
         val out = messages.toMutableList()
         var total = out.sumOf { it.content.length }
-        while (total > 200 && out.size > 1) {
+        while (total > 188 && out.size > 1) {
             val removed = out.removeAt(0)
             total -= removed.content.length
         }
@@ -140,8 +125,7 @@ object XiaoMiAi {
 
     /** 从 prefs 反序列化 */
     fun load(raw: String?): List<Msg> {
-        if (raw.isNullOrBlank())
-            return listOf(Msg("assistant", "我是小染，MikasaUI 的本地 AI 助手，无需联网！有什么想问的？喵～"))
+        if (raw.isNullOrBlank()) return listOf(Msg("assistant", "我是雷电法军⚡ 小米 AI 已就位，有什么想问的？"))
         return try {
             val arr = JSONArray(raw)
             (0 until arr.length()).map { i ->
@@ -149,40 +133,27 @@ object XiaoMiAi {
                 Msg(o.optString("r"), o.optString("c"))
             }
         } catch (e: Exception) {
-            listOf(Msg("assistant", "我是小染，MikasaUI 的本地 AI 助手，无需联网！有什么想问的？喵～"))
+            listOf(Msg("assistant", "我是雷电法军⚡ 小米 AI 已就位，有什么想问的？"))
         }
     }
 }
 
 /**
- * 小染助手聊天页（受控组件：状态由外部持有，滑动/退出不丢失）
+ * AI 助手聊天页（受控组件：状态由外部持有，滑动/退出不丢失）
  * @param messages 消息列表（外部持久化）
  * @param loading 是否等待回复
- * @param onSend 发送回调（外部处理本地逻辑）
+ * @param onSend 发送回调（外部处理网络请求）
  * @param onClear 手动清空聊天
  */
 @Composable
 fun AiChatPage(
     messages: List<XiaoMiAi.Msg>,
     loading: Boolean,
-    onSend: (text: String, image: String) -> Unit,
+    onSend: (String) -> Unit,
     onClear: () -> Unit
 ) {
-    val context = LocalContext.current
     val listState = rememberLazyListState()
     var input by remember { mutableStateOf("") }
-    var pendingImg by remember { mutableStateOf("") } // 待发送的图片 dataURL
-
-    // 选择图片→base64
-    val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        val b64 = uri?.let { u ->
-            try {
-                val bytes = context.contentResolver.openInputStream(u)?.use { it.readBytes() }
-                if (bytes != null) "data:image/png;base64," + android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP) else ""
-            } catch (e: Exception) { "" }
-        }
-        if (!b64.isNullOrEmpty()) pendingImg = b64
-    }
 
     // 新消息自动滚到底
     LaunchedEffect(messages.size) {
@@ -201,9 +172,9 @@ fun AiChatPage(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text("小染助手", fontSize = 28.sp, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.onBackground)
+                Text("AI 助手", fontSize = 28.sp, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.onBackground)
                 Spacer(Modifier.height(4.dp))
-                Text("小染客服 · 后端可人工接管", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("雷电法军 · 小米 MiMo · 上下文 188 字", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             // 手动清空按钮
             Text(
@@ -213,8 +184,7 @@ fun AiChatPage(
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier
                     .clip(RoundedCornerShape(14.dp))
-                    .background(Color.White.copy(alpha = 0.3f))
-                    .border(1.dp, Color.White.copy(alpha = 0.5f), RoundedCornerShape(14.dp))
+                    .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.5f))
                     .clickable { onClear() }
                     .padding(horizontal = 14.dp, vertical = 8.dp)
             )
@@ -241,7 +211,7 @@ fun AiChatPage(
                             color = MaterialTheme.colorScheme.primary
                         )
                         Spacer(Modifier.width(8.dp))
-                        Text("小染思考中…", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("雷电法军思考中…", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
@@ -249,74 +219,39 @@ fun AiChatPage(
 
         Spacer(Modifier.height(8.dp))
 
-        // 待发图片预览
-        if (pendingImg.isNotEmpty()) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(Color.White.copy(alpha = 0.3f))
-                    .padding(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("📎 已附图片", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface)
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    "移除", fontSize = 12.sp, color = Color(0xFFE53935),
-                    modifier = Modifier.clickable { pendingImg = "" }
-                        .padding(horizontal = 6.dp, vertical = 2.dp)
-                )
-            }
-            Spacer(Modifier.height(8.dp))
-        }
-
         // 输入栏
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // 附图按钮
-            Text(
-                "📷", fontSize = 20.sp,
-                modifier = Modifier
-                    .clip(CircleShape)
-                    .background(Color.White.copy(alpha = 0.4f))
-                    .clickable { pickImage.launch("image/*") }
-                    .padding(10.dp)
-            )
-            Spacer(Modifier.width(8.dp))
             TextField(
                 value = input,
                 onValueChange = { input = it },
                 modifier = Modifier
                     .weight(1f)
-                    .clip(RoundedCornerShape(22.dp))
-                    .background(Color.White.copy(alpha = 0.4f))
-                    .border(1.dp, Color.White.copy(alpha = 0.5f), RoundedCornerShape(22.dp)),
-                placeholder = { Text("问小染点什么…", fontSize = 14.sp) },
+                    .clip(RoundedCornerShape(22.dp)),
+                placeholder = { Text("问雷电法军点什么…", fontSize = 14.sp) },
                 singleLine = true,
                 colors = TextFieldDefaults.colors(
-                    focusedContainerColor = Color.White.copy(alpha = 0.4f),
-                    unfocusedContainerColor = Color.White.copy(alpha = 0.4f),
+                    focusedContainerColor = Color.White,
+                    unfocusedContainerColor = Color.White,
                     focusedIndicatorColor = Color.Transparent,
                     unfocusedIndicatorColor = Color.Transparent,
                     cursorColor = MaterialTheme.colorScheme.primary
                 )
             )
             Spacer(Modifier.width(8.dp))
-            // 发送按钮（液态玻璃风格）
+            // 发送按钮
             Box(
                 modifier = Modifier
                     .size(46.dp)
                     .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.85f))
+                    .background(MaterialTheme.colorScheme.primary)
                     .clickable {
                         val text = input.trim()
                         if (text.isEmpty() || loading) return@clickable
-                        val img = pendingImg
                         input = ""
-                        pendingImg = ""
-                        onSend(text, img)
+                        onSend(text)
                     },
                 contentAlignment = Alignment.Center
             ) {
@@ -327,7 +262,7 @@ fun AiChatPage(
     }
 }
 
-/** 聊天气泡：AI 左侧半透明白 / 用户右侧主题色（液态玻璃风格） */
+/** 聊天气泡：AI 左侧白色 / 用户右侧主题色 */
 @Composable
 private fun ChatBubble(msg: XiaoMiAi.Msg) {
     val isUser = msg.role == "user"
@@ -336,15 +271,15 @@ private fun ChatBubble(msg: XiaoMiAi.Msg) {
         horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
     ) {
         if (!isUser) {
-            // 助手头像（小染 · 粉紫色圆）
+            // 助手头像（雷电）
             Box(
                 modifier = Modifier
                     .size(30.dp)
                     .clip(CircleShape)
-                    .background(Color(0xFFB388FF).copy(alpha = 0.8f)),
+                    .background(Color(0xFFFFB300)),
                 contentAlignment = Alignment.Center
             ) {
-                Text("染", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                Text("⚡", fontSize = 15.sp)
             }
             Spacer(Modifier.width(8.dp))
         }
@@ -353,13 +288,8 @@ private fun ChatBubble(msg: XiaoMiAi.Msg) {
                 .widthIn(max = 280.dp)
                 .clip(RoundedCornerShape(18.dp))
                 .background(
-                    if (isUser) MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
-                    else Color.White.copy(alpha = 0.55f)
-                )
-                .border(
-                    1.dp,
-                    if (isUser) Color.White.copy(alpha = 0.3f) else Color.White.copy(alpha = 0.5f),
-                    RoundedCornerShape(18.dp)
+                    if (isUser) MaterialTheme.colorScheme.primary
+                    else Color.White
                 )
                 .padding(horizontal = 14.dp, vertical = 10.dp)
         ) {

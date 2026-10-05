@@ -1,0 +1,272 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=3,user-scalable=yes,viewport-fit=cover">
+<title>小染注入后端</title>
+<style>
+:root{--glass:rgba(255,255,255,.14);--glass2:rgba(255,255,255,.26);--bd:rgba(255,255,255,.28);--ok:#2ecc71;--bad:#e5484d}
+*{box-sizing:border-box;margin:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%}
+body{font:14px/1.5 -apple-system,system-ui,"Noto Sans SC",sans-serif;color:#fff;overflow:hidden;background:linear-gradient(140deg,#2b3a8f,#4a5bc7 45%,#7a4fb5)}
+body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;background:radial-gradient(circle at 18% 22%,rgba(150,190,255,.45),transparent 40%),radial-gradient(circle at 82% 78%,rgba(200,140,255,.4),transparent 40%)}
+#wrap{position:relative;z-index:1;display:flex;height:100vh}
+#side{width:74px;flex:0 0 74px;background:var(--glass);backdrop-filter:blur(14px) saturate(1.2);-webkit-backdrop-filter:blur(14px) saturate(1.2);border-right:1px solid var(--bd);display:flex;flex-direction:column;padding:8px 6px;gap:2px}
+#side .logo{font-weight:800;font-size:12px;text-align:center;padding:6px 0 10px;border-bottom:1px solid var(--bd);margin-bottom:6px;line-height:1.5}
+#side a{flex:1;display:flex;align-items:center;justify-content:center;font-size:12px;color:rgba(255,255,255,.72);cursor:pointer;border-radius:12px;text-decoration:none;transition:background .18s}
+#side a.on{background:var(--glass2);color:#fff;box-shadow:0 4px 12px rgba(0,0,0,.2)}
+#main{flex:1;padding:12px;overflow:auto}
+.bar{position:sticky;top:0;display:flex;align-items:center;gap:10px;background:var(--glass);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border:1px solid var(--bd);border-radius:18px;padding:9px 14px;margin-bottom:12px;z-index:5}
+.bar h1{font-size:15px;font-weight:700}
+.badge{padding:3px 10px;border-radius:12px;font-size:11px;background:rgba(46,204,113,.4)}
+.badge.off{background:rgba(231,72,77,.5)}
+.sec{display:none;animation:fade .22s ease}
+.sec.on{display:block}
+@keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.card{background:var(--glass);backdrop-filter:blur(12px) saturate(1.2);-webkit-backdrop-filter:blur(12px) saturate(1.2);border:1px solid var(--bd);border-radius:20px;padding:14px;margin:12px 0;box-shadow:0 8px 24px rgba(0,0,0,.2)}
+.card h2{font-size:13px;margin-bottom:10px;opacity:.9}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+button{background:linear-gradient(135deg,var(--glass2),rgba(255,255,255,.06));border:1px solid var(--bd);color:#fff;border-radius:13px;padding:8px 14px;cursor:pointer;font-size:13px;transition:transform .08s}
+button:active{transform:scale(.95)}
+button.ghost{background:rgba(255,255,255,.1)}
+button.bad{border-color:rgba(231,72,77,.6);background:rgba(231,72,77,.24)}
+button.ok{border-color:rgba(46,204,113,.5);background:rgba(46,204,113,.28)}
+input,textarea,select{background:rgba(0,0,0,.2);border:1px solid var(--bd);border-radius:11px;padding:8px 10px;color:#fff;font-size:13px}
+option{color:#1f2a44}
+label{display:block;font-size:11px;color:rgba(255,255,255,.62);margin:8px 0 3px}
+.stat{background:rgba(255,255,255,.12);border:1px solid var(--bd);border-radius:16px;padding:14px;text-align:center;flex:1;min-width:100px}
+.stat b{display:block;font-size:26px}
+.list{max-height:44vh;overflow:auto}
+.it{display:flex;justify-content:space-between;align-items:center;gap:8px;border-bottom:1px solid rgba(255,255,255,.12);padding:9px 0;flex-wrap:wrap}
+.it .ops{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.it .ops button{padding:5px 10px;font-size:12px}
+.it .ops a{padding:5px 10px;font-size:12px;text-decoration:none}
+a{color:#cfe0ff}
+.pill{padding:2px 9px;border-radius:10px;background:rgba(255,255,255,.18);font-size:11px}
+.pill.exp{background:rgba(231,72,77,.4)}.pill.perm{background:rgba(46,204,113,.4)}
+.due{font-size:11px;color:rgba(255,255,255,.7)}
+.sub{color:rgba(255,255,255,.55);font-size:12px}
+img{max-width:120px;max-height:120px;border-radius:10px;background:rgba(0,0,0,.2);object-fit:cover}
+input[type=checkbox]{width:18px;height:18px;accent-color:#4a9eff}
+#modal{position:fixed;inset:0;z-index:80;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.4);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px)}
+#modal.on{display:flex}
+#modal .box{width:min(340px,86vw);background:rgba(30,35,70,.72);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid var(--bd);border-radius:20px;padding:18px;box-shadow:0 12px 40px rgba(0,0,0,.4);animation:pop .2s ease}
+@keyframes pop{from{opacity:0;transform:scale(.94)}to{opacity:1;transform:none}}
+#modal h3{font-size:15px;margin-bottom:8px}
+#modal .mb{font-size:13px;color:rgba(255,255,255,.85);margin-bottom:14px;white-space:pre-wrap}
+#modal .mrow{display:flex;gap:8px;justify-content:flex-end}
+#toast{position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:90;display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none}
+#toast .t{background:rgba(20,24,48,.85);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border:1px solid var(--bd);border-radius:14px;padding:9px 16px;font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,.3);animation:tin .25s ease}
+#toast .t.ok{border-color:rgba(46,204,113,.5)}
+#toast .t.bad{border-color:rgba(231,72,77,.5)}
+@keyframes tin{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:none}}
+#rotHint{display:none;position:fixed;inset:0;z-index:99;background:rgba(20,20,40,.85);backdrop-filter:blur(8px);align-items:center;justify-content:center;flex-direction:column;gap:10px;text-align:center}
+#rotHint .big{font-size:34px}
+#lockBtn{position:fixed;right:12px;bottom:12px;z-index:90;width:44px;height:44px;border-radius:14px;background:rgba(0,0,0,.4);border:1px solid var(--bd);color:#fff;font-size:18px}
+@media (orientation:portrait){#rotHint{display:flex}}
+</style></head><body>
+<div id="rotHint"><div class="big">↔</div><b>请横屏使用</b><span class="sub">将设备旋转为横向</span></div>
+<button id="lockBtn" title="锁定横屏" onclick="lockLandscape()">⛶</button>
+<div id="wrap">
+<nav id="side">
+<div class="logo">小染<br>后台</div>
+<a data-t="ov" class="on">概览</a>
+<a data-t="card">卡密</a>
+<a data-t="ann">公告</a>
+<a data-t="upd">更新</a>
+<a data-t="vid">视频</a>
+<a data-t="file">文件</a>
+<a data-t="mus">音乐</a>
+<a data-t="cs">客服</a>
+<a data-t="dir">目录</a>
+</nav>
+<main id="main">
+<div class="bar"><h1>小染注入后端</h1><span class="badge" id="ovSvc">运行中</span><span class="due">在线 <b id="ovOnline">0</b> · 使用 <b id="ovTotal">0</b></span><span style="flex:1"></span><button class="ok" onclick="setDis(false)">启用</button><button class="bad" onclick="setDis(true)">停用</button></div>
+
+<section class="sec on" data-t="ov">
+<div class="card"><h2>概览</h2><div class="row"><div class="stat"><b id="ovOnline2">-</b>在线人数</div><div class="stat"><b id="ovTotal2">-</b>使用人数</div></div><div class="sub" style="margin-top:8px">停用后，前端 App 与本页均会显示「已停用」。</div></div>
+</section>
+
+<section class="sec" data-t="card">
+<div class="card"><h2>生成卡密</h2>
+<div class="row">
+<select id="cDur"><option value="permanent">永久</option><option value="month">月卡</option><option value="week">周卡</option><option value="day">天卡</option></select>
+<select id="cFmt"><option value="alnum">字母+数字</option><option value="digits">纯数字</option><option value="letters">纯字母</option><option value="custom">自定义前缀</option></select>
+<select id="cCase"><option value="1">大小写</option><option value="0">小写</option></select>
+<input id="cPre" placeholder="前缀" style="width:72px"><input id="cLen" placeholder="长" value="6" style="width:46px">
+<button onclick="genCard()">生成 1 张</button>
+</div>
+<div class="row" style="margin-top:8px"><span class="sub">批量生成</span><input id="cN" placeholder="数量" value="10" style="width:64px"><button class="ok" onclick="genBatch()">批量生成</button><span class="sub" id="genOut"></span></div></div>
+<div class="card"><h2>卡密列表</h2>
+<div class="row" style="margin-bottom:8px">
+<button class="ghost" onclick="loadCards()">刷新</button>
+<button class="ghost" onclick="selAll(true)">全选</button>
+<button class="ghost" onclick="selAll(false)">取消</button>
+<button class="bad" onclick="delSel()">删除选中</button>
+<span class="sub">共 <b id="cardCnt">0</b> 张</span>
+</div>
+<div class="list" id="cards"></div></div>
+</section>
+<section class="sec" data-t="ann">
+<div class="card"><h2>公告</h2>
+<label>主标题</label><input id="anT">
+<label>内容</label><textarea id="anC" rows="3"></textarea>
+<label>图标（上传）</label><div class="row"><input type="file" id="anI" accept="image/*" style="display:none"><button class="ghost" onclick="pick('anI','anIv')">上传图标</button><span class="sub" id="anIv">无</span></div>
+<div class="row" style="margin-top:10px"><button onclick="saveAnn()">保存公告</button></div></div>
+</section>
+
+<section class="sec" data-t="upd">
+<div class="card"><h2>更新</h2>
+<label>更新内容</label><textarea id="uContent" rows="3"></textarea>
+<label>更新图片</label><div class="row"><input type="file" id="uImg" accept="image/*" style="display:none"><button class="ghost" onclick="pick('uImg','uImgv')">上传图片</button><span class="sub" id="uImgv">无</span></div>
+<div class="row" style="margin-top:8px"><div><label>最低版本</label><input id="uMin"></div><div style="flex:1"><label>下载链接</label><input id="uUrl"></div></div>
+<div class="row" style="margin-top:8px"><label style="display:inline">启用 <input type="checkbox" id="uEn" style="width:auto"></label><label style="display:inline;margin-left:12px">强制 <input type="checkbox" id="uForce" style="width:auto"></label><button onclick="saveUpd()">保存</button></div></div>
+</section>
+
+<section class="sec" data-t="vid">
+<div class="card"><h2>视频背景</h2><div class="row"><input type="file" id="vFile" accept="video/*" style="display:none"><button class="ghost" onclick="pick('vFile','vNote')">选择视频</button><button onclick="upVideo()">上传为视频背景</button></div><div class="sub" style="margin-top:6px" id="vNote">上传后前端可开「视频背景」，播放 /videoBg</div></div>
+</section>
+
+<section class="sec" data-t="file">
+<div class="card"><h2>文件</h2><div class="row" style="margin-bottom:8px"><input type="file" id="fFile" multiple style="display:none"><button class="ghost" onclick="pick('fFile','fNote',1)">上传文件</button><button class="ghost" onclick="loadFiles()">刷新</button></div><div class="list" id="files"></div></div>
+</section>
+
+<section class="sec" data-t="mus">
+<div class="card"><h2>音乐</h2><div class="row" style="margin-bottom:8px"><input type="file" id="mFile" accept="audio/*" multiple style="display:none"><button class="ghost" onclick="pick('mFile','mNote',1)">上传音乐</button><button class="ghost" onclick="loadFiles()">刷新</button></div><div class="list" id="music"></div></div>
+</section>
+
+<section class="sec" data-t="cs">
+<div class="card"><h2>客服问答</h2><div class="row" style="margin-bottom:8px"><input id="csQ" placeholder="问题" style="flex:1"><input id="csA" placeholder="回答" style="flex:1"><button onclick="csAdd()">添加</button></div><div class="list" id="csQa"></div></div>
+<div class="card"><h2>留言收件箱（标注卡密 + 设备）</h2><div class="row" style="margin-bottom:8px"><button class="ghost" onclick="loadInbox()">刷新</button></div><div class="list" id="inbox"></div></div>
+</section>
+
+<section class="sec" data-t="dir">
+<div class="card"><h2>zip 解压目标</h2>
+<label>默认目录</label><div class="row"><input id="dDef" style="flex:1"><button class="ghost" onclick="saveDir('default')">保存</button></div>
+<label>pak 目录</label><div class="row"><input id="dPak" style="flex:1"><button class="ghost" onclick="saveDir('pak')">保存</button></div>
+<div class="sub" style="margin-top:8px">前端解压时按所选「默认 / pak」导入到对应目录。</div></div>
+</section>
+</main>
+</div>
+<div id="modal"><div class="box"><h3 id="mT"></h3><div class="mb" id="mB"></div><input id="mI" style="width:100%;margin-bottom:12px;display:none"><div class="mrow"><button class="ghost" id="mCancel" onclick="closeModal()">取消</button><button class="ok" id="mOk">确定</button></div></div></div>
+<div id="toast"></div>
+<script>
+const B = location.origin, $ = id => document.getElementById(id);
+function api(p, m, o) {
+  const opt = { method: m || 'GET', headers: {} };
+  if (m && m !== 'GET' && o) { opt.headers['Content-Type'] = 'application/json'; opt.body = JSON.stringify(o); }
+  return fetch(B + p, opt).then(r => r.json()).catch(e => { console.error('api', p, e); return { ok: false, msg: e && e.message }; });
+}
+function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+document.querySelectorAll('#side a').forEach(a => a.onclick = () => {
+  document.querySelectorAll('.sec').forEach(s => s.classList.toggle('on', s.dataset.t === a.dataset.t));
+  document.querySelectorAll('#side a').forEach(b => b.classList.toggle('on', b === a));
+});
+// —— 自制液态玻璃弹窗（替代 alert/confirm/prompt）——
+let _cb = null;
+function openModal(title, body, opts) {
+  opts = opts || {};
+  $('mT').textContent = title; $('mB').textContent = body;
+  const inp = $('mI');
+  if (opts.input) { inp.style.display = 'block'; inp.value = opts.inputVal || ''; inp.placeholder = opts.inputPh || ''; } else inp.style.display = 'none';
+  $('mCancel').style.display = opts.cancel === false ? 'none' : '';
+  $('mOk').textContent = opts.okText || '确定';
+  _cb = function () { closeModal(); if (opts.onOk) opts.onOk(opts.input ? inp.value : undefined); };
+  $('modal').classList.add('on');
+}
+function closeModal() { $('modal').classList.remove('on'); _cb = null; }
+function confirmDlg(t, b, ok) { openModal(t, b, { onOk: ok }); }
+function promptDlg(t, b, ok, val, ph) { openModal(t, b, { input: true, inputVal: val, inputPh: ph, onOk: ok }); }
+function toast(msg, cls) {
+  const t = document.createElement('div'); t.className = 't ' + (cls || ''); t.textContent = msg;
+  $('toast').appendChild(t); setTimeout(() => { t.style.transition = 'opacity .3s'; t.style.opacity = '0'; setTimeout(() => t.remove(), 300); }, 2200);
+}
+$('mOk').onclick = function () { if (_cb) { const f = _cb; _cb = null; f(); } };
+// —— 概览 ——
+function refresh() {
+  api('/api/status').then(s => {
+    const off = !!s.serviceDisabled, el = $('ovSvc'); el.textContent = off ? '已停用' : '运行中'; el.classList.toggle('off', off);
+    $('ovTotal').textContent = s.total || 0; $('ovTotal2').textContent = s.total || 0;
+    const a = s.announcement || {}; $('anT').value = a.title || ''; $('anC').value = a.content || '';
+    const u = s.update || {}; $('uMin').value = u.minVersion || ''; $('uUrl').value = u.url || ''; $('uEn').checked = !!u.enabled; $('uForce').checked = !!u.force; $('uContent').value = u.content || '';
+  });
+  api('/api/stats').then(s => { $('ovOnline').textContent = s.online; $('ovOnline2').textContent = s.online; });
+  api('/api/config').then(c => { $('dDef').value = (c.importDir && c.importDir.default) || ''; $('dPak').value = (c.importDir && c.importDir.pak) || ''; });
+  loadCards(); loadFiles(); loadQa(); loadInbox();
+}
+function setDis(on) { api('/api/admin/disable', 'POST', { on }).then(refresh); }
+// —— 卡密（含批量生成 / 批量删除）——
+function cardOpts() { return { dur: $('cDur').value, format: $('cFmt').value, prefix: $('cPre').value, len: (+$('cLen').value) || 6, upper: $('cCase').value === '1', label: '' }; }
+function genCard() { api('/api/admin/generateCard', 'POST', cardOpts()).then(r => { if (r.ok) { toast('已生成：' + r.key, 'ok'); loadCards(); } else toast(r.msg || '失败', 'bad'); }); }
+function genBatch() { const o = cardOpts(); o.count = (+$('cN').value) || 1; api('/api/admin/generateBatch', 'POST', o).then(r => { if (r.ok) { $('genOut').textContent = '已生成 ' + (r.keys || []).length + ' 张'; toast('批量生成 ' + (r.keys || []).length + ' 张', 'ok'); loadCards(); } else toast(r.msg || '失败', 'bad'); }); }
+function loadCards() {
+  api('/api/admin/cards').then(r => {
+    const cs = r.cards || {}, ks = Object.keys(cs), now = Date.now();
+    $('cardCnt').textContent = ks.length; const box = $('cards');
+    if (!ks.length) { box.innerHTML = '<div class="sub">暂无卡密</div>'; return; }
+    let html = '';
+    for (const k of ks) {
+      const c = cs[k]; let due, dcls = '';
+      if (c.type === 'permanent') { due = '永久'; dcls = 'perm'; }
+      else if (c.expiresAt) { const over = c.expiresAt < now; due = new Date(c.expiresAt).toLocaleString() + (over ? '（已过期）' : ''); dcls = over ? 'exp' : ''; }
+      else due = '未设';
+      const st = c.banned ? '<span class="pill exp">封禁:' + esc(c.banReason || '无理由') + '</span>' : (c.boundDevice ? '<span class="pill">已绑:' + esc(c.boundDevice) + '</span>' : '<span class="pill perm">可用</span>');
+      html += '<label class="it"><input type="checkbox" class="ck" value="' + esc(k) + '"><div style="flex:1"><b>' + esc(k) + '</b> <span class="pill">' + c.type + '</span> <span class="pill ' + dcls + '">' + due + '</span> ' + st + '</div><div class="ops"><button class="ghost" onclick="banto(\'' + esc(k) + '\')">封禁</button><button class="ghost" onclick="banoff(\'' + esc(k) + '\')">解封</button><button class="bad" onclick="delone(\'' + esc(k) + '\')">删除</button></div></label>';
+    }
+    box.innerHTML = html;
+  });
+}
+function selAll(v) { document.querySelectorAll('#cards .ck').forEach(c => c.checked = v); }
+function delSel() {
+  const ks = [...document.querySelectorAll('#cards .ck:checked')].map(c => c.value);
+  if (!ks.length) { toast('未选择卡密', 'bad'); return; }
+  confirmDlg('批量删除', '确定删除选中的 ' + ks.length + ' 张卡密？不可恢复。', () => {
+    api('/api/admin/deleteCards', 'POST', { keys: ks }).then(r => { toast('已删除 ' + (r.deleted || 0) + ' 张', 'ok'); loadCards(); });
+  });
+}
+function delone(k) { confirmDlg('删除卡密', '确定删除 ' + k + ' ？不可恢复。', () => { api('/api/admin/deleteCard', 'POST', { key: k }).then(() => { toast('已删除', 'ok'); loadCards(); }); }); }
+function banto(k) { promptDlg('封禁卡密', '卡密：' + k, reason => { api('/api/admin/banCard', 'POST', { key: k, ban: true, reason: reason || '未填写' }).then(() => { toast('已封禁', 'ok'); loadCards(); }); }, '', '封禁原因（可留空）'); }
+function banoff(k) { api('/api/admin/banCard', 'POST', { key: k, ban: false }).then(() => { toast('已解封', 'ok'); loadCards(); }); }
+// —— 公告 / 更新 / 视频 ——
+function saveAnn() { api('/api/admin/announce', 'POST', { title: $('anT').value, content: $('anC').value, icon: ($('anI').dataset.data || '').split(',')[1] || '' }).then(() => toast('公告已保存', 'ok')); }
+function saveUpd() { api('/api/admin/update', 'POST', { minVersion: $('uMin').value, url: $('uUrl').value, enabled: $('uEn').checked, force: $('uForce').checked, content: $('uContent').value, image: ($('uImg').dataset.data || '').split(',')[1] || '' }).then(() => toast('更新已保存', 'ok')); }
+function upVideo() { const d = $('vFile').dataset.data; if (!d) { toast('请先选择视频', 'bad'); return; } api('/api/admin/uploadVideo', 'POST', { contentBase64: d.split(',')[1] }).then(x => $('vNote').textContent = x.ok ? '视频已上传（/videoBg）' : '失败'); }
+function pick(id, noteId, multi) {
+  const el = $(id);
+  el.addEventListener('change', function () {
+    const fs = [...el.files]; if (!fs.length) return;
+    if (multi) {
+      const kind = id === 'mFile' ? 'music' : 'files';
+      fs.forEach(f => { const r = new FileReader(); r.onload = () => api('/api/' + (kind === 'music' ? 'music' : 'file') + '/upload', 'POST', { name: f.name, contentBase64: r.result.split(',')[1] }).then(loadFiles); r.readAsDataURL(f); });
+      el.value = ''; return;
+    }
+    const f = fs[0], r = new FileReader(); r.onload = () => { el.dataset.data = r.result; $(noteId).textContent = f.name + ' ✓'; }; r.readAsDataURL(f);
+  });
+  el.click();
+}
+// —— 文件 / 音乐（含删除）——
+function loadFiles() {
+  Promise.all([api('/api/files'), api('/api/music')]).then(([f, m]) => {
+    const row = (x, kind) => '<div class="it"><div>' + (kind === 'music' ? '♪ ' : '') + esc(x.name) + ' <span class="pill">' + Math.round(x.size / 1024) + 'KB</span></div><div class="ops"><a href="' + B + esc(x.url) + '" target="_blank">下载</a><button class="bad" onclick="delFile(\'' + kind + '\',\'' + esc(x.id) + '\')">删除</button></div></div>';
+    $('files').innerHTML = f.files.map(x => row(x, 'files')).join('') || '<div class="sub">无</div>';
+    $('music').innerHTML = m.files.map(x => row(x, 'music')).join('') || '<div class="sub">无</div>';
+  });
+}
+function delFile(kind, id) { confirmDlg('删除', '确定删除该文件 / 音乐？', () => { api('/api/admin/deleteFile', 'POST', { kind, id }).then(() => { toast('已删除', 'ok'); loadFiles(); }); }); }
+// —— 客服 ——
+function csAdd() { api('/api/admin/csQa', 'POST', { q: $('csQ').value, a: $('csA').value }).then(loadQa); }
+function loadQa() { api('/api/csQa').then(r => { $('csQa').innerHTML = (r.qa || []).map(x => '<div class="it"><div>Q:' + esc(x.q) + '<br>A:' + esc(x.a) + '</div><div class="ops"><button class="ghost" onclick="delQa(\'' + esc(x.id) + '\')">删</button></div></div>').join('') || '<div class="sub">无</div>'; }); }
+function delQa(id) { api('/api/admin/csQa', 'POST', { del: id }).then(loadQa); }
+function loadInbox() { api('/api/admin/csInbox').then(r => { $('inbox').innerHTML = (r.inbox || []).map(x => '<div class="it"><div>[' + new Date(x.ts).toLocaleString() + '] <span class="pill">' + esc(x.card || '未知卡密') + '</span> 设备:' + esc(x.device || '?') + '</div><div>' + (x.media ? '[含媒体] ' : '') + esc(x.text || '') + '</div></div>').join('') || '<div class="sub">暂无留言</div>'; }); }
+// —— 目录 ——
+function saveDir(w) { api('/api/admin/setImportDir', 'POST', { which: w, path: w === 'pak' ? $('dPak').value : $('dDef').value }).then(() => toast('已保存', 'ok')); }
+// —— 横屏（无缩放）——
+function lockLandscape() {
+  const fail = () => toast('请手动旋转到横屏');
+  try {
+    if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().then(() => { try { screen.orientation && screen.orientation.lock('landscape'); } catch (e) {} }).catch(fail);
+    else if (screen.orientation) screen.orientation.lock('landscape').catch(fail);
+    else fail();
+  } catch (e) { fail(); }
+}
+// —— 启动（无登录，直接进）——
+refresh();
+setInterval(() => { api('/api/stats').then(s => { $('ovOnline').textContent = s.online; $('ovOnline2').textContent = s.online; }); }, 30000);
+</script></body></html>

@@ -4,10 +4,10 @@
     <string name="title">小染自动注入</string>
     <string name="accessibility_desc">使用音量键控制悬浮窗UI显示：音量减=隐藏全部UI，音量加=恢复显示。适合防录屏场景。</string>
     <string name="search_hint">搜索功能</string>
-    <string name="version">小染pro</string>
+    <string name="version">小染自动注入 6.0</string>
     <string name="nav_home">主页</string>
-    <string name="nav_person">功能</string>
-    <string name="nav_gun">美化</string>
+    <string name="nav_person">人物</string>
+    <string name="nav_gun">枪械</string>
     <string name="nav_misc">杂类</string>
     <string name="nav_settings">设置</string>
     <string name="tab_home">首页</string>
@@ -21,7 +21,7 @@
     <string name="tab_sound">音效</string>
     <string name="tab_other">其他</string>
     <string name="tab_general">通用设置</string>
-    <string name="tab_about">关于小染</string>
+    <string name="tab_about">关于</string>
     <string name="welcome_title">欢迎使用小染自动注入</string>
     <string name="welcome_desc">选择左侧菜单开始使用</string>
     <string name="select_illust">选择立绘</string>

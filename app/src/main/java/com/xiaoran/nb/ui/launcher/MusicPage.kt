@@ -24,7 +24,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.draw.shadow
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
@@ -37,7 +36,6 @@ import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -117,11 +115,6 @@ object MusicApi {
      * 1. 网易官方外链（最稳，无版权/付费歌返回404）
      * 2. gdstudio 解析接口（付费歌也能拿到 CDN 直链）
      */
-    private const val HOT_KEYWORD = "周杰伦"
-
-    /** 热门榜：进入音乐页自动播放（本地测试关键词，后端可替换为真实热榜） */
-    fun hot(): List<Song> = runCatching { search(HOT_KEYWORD) }.getOrDefault(emptyList())
-
     fun resolvePlayUrl(id: String): String {
         val official = "https://music.163.com/song/media/outer/url?id=$id.mp3"
         if (probeAudio(official)) return official
@@ -302,15 +295,6 @@ fun MusicPage() {
         }
     }
 
-    // 自动播放热门：首次进入音乐页且未选歌时，拉取热门榜并自动播放第一首
-    val autoStarted = remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        if (autoStarted.value) return@LaunchedEffect
-        autoStarted.value = true
-        songs = withContext(Dispatchers.IO) { MusicApi.hot() }
-        songs.firstOrNull()?.let { playSong(it) }
-    }
-
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -375,15 +359,13 @@ fun MusicPage() {
         }
         Spacer(Modifier.height(12.dp))
 
-        // 当前播放卡片 液态玻璃风格
+        // 当前播放卡片
         if (current != null) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .shadow(4.dp, RoundedCornerShape(18.dp), clip = false)
                     .clip(RoundedCornerShape(18.dp))
-                    .background(Color.White.copy(alpha = 0.4f))
-                    .border(1.dp, Color.White.copy(alpha = 0.55f), RoundedCornerShape(18.dp))
+                    .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.6f))
                     .padding(14.dp)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -525,16 +507,14 @@ fun MusicPage() {
 private fun Modifier.borderCompat(): Modifier =
     this.border(1.5.dp, Color(0xFFE5E5E5), RoundedCornerShape(24.dp))
 
-/** 歌曲列表行（液态玻璃风格） */
+/** 歌曲列表行 */
 @Composable
 private fun SongRow(song: MusicApi.Song, active: Boolean, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .shadow(4.dp, RoundedCornerShape(14.dp), clip = false)
             .clip(RoundedCornerShape(14.dp))
-            .background(if (active) MaterialTheme.colorScheme.primary.copy(alpha = 0.3f) else Color.White.copy(alpha = 0.35f))
-            .border(1.dp, Color.White.copy(alpha = 0.5f), RoundedCornerShape(14.dp))
+            .background(if (active) MaterialTheme.colorScheme.secondary.copy(alpha = 0.5f) else Color.White)
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically

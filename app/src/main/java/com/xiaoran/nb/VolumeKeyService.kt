@@ -117,7 +117,7 @@ class VolumeKeyService : AccessibilityService() {
             for (kw in RECORD_KEYWORDS) {
                 if (haystack.contains(kw)) {
                     // 过滤自身App的文本，避免误判
-                    if (!haystack.contains("mikasa") && !haystack.contains("三笠")) {
+                    if (!haystack.contains("mikasa") && !haystack.contains("小染")) {
                         Log.d(TAG, "hit: $haystack")
                         return true
                     }
