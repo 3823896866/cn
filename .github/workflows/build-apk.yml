@@ -14,20 +14,30 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Android SDK + NDK 27.1
-        uses: android-actions/setup-android@v3
-        with:
-          ndk-version: "27.1.12297006"
-          build-tools: "34.0.0"
-          platform-version: "34"
+      - name: Install Android SDK + NDK（跳过已废弃 tools）
+        run: |
+          SdkRoot="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          export ANDROID_HOME="$SdkRoot"; export ANDROID_SDK_ROOT="$SdkRoot"
+          SM=""
+          for c in latest 16.0 15.0 14.0; do
+            if [ -x "$SdkRoot/cmdline-tools/$c/bin/sdkmanager" ]; then SM="$SdkRoot/cmdline-tools/$c/bin/sdkmanager"; break; fi
+          done
+          if [ -z "$SM" ]; then
+            curl -fsSL https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -o /tmp/clt.zip
+            (command -v unzip >/dev/null && unzip -q /tmp/clt.zip -d /tmp/clt) || python3 -c "import zipfile;zipfile.ZipFile('/tmp/clt.zip').extractall('/tmp/clt')"
+            mkdir -p "$SdkRoot/cmdline-tools" && mv /tmp/clt/cmdline-tools "$SdkRoot/cmdline-tools/latest"
+            SM="$SdkRoot/cmdline-tools/latest/bin/sdkmanager"
+          fi
+          yes | "$SM" --licenses >/dev/null 2>&1 || true
+          "$SM" "platform-tools" "platforms;android-34" "build-tools;34.0.0" "ndk;27.1.12297006"
+          echo "ANDROID_HOME=$SdkRoot" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SdkRoot" >> "$GITHUB_ENV"
+          echo "$SdkRoot/platform-tools" >> "$GITHUB_PATH"
 
-      - name: Accept licenses
-        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null 2>&1 || true
-
-      # 交叉编译 FreeType(aarch64) 供 CMake 链接；失败则 CMake 自动回退内置字体，仍可出包
+      # 交叉编译 FreeType(aarch64)；失败则 CMake 自动回退内置字体，仍可出包
       - name: Build FreeType .a (best-effort)
         run: |
-          NDK="$ANDROID_HOME/ndk/27.1.12297006"
+          NDK="${ANDROID_HOME}/ndk/27.1.12297006"
           [ -d "$NDK" ] || NDK="${ANDROID_NDK:-$NDK}"
           if [ -d "$NDK" ]; then
             bash app/src/main/cpp/freetype/build_freetype_aarch64.sh "$NDK" || echo "freetype 编译失败 -> 回退内置字体"
@@ -38,7 +48,7 @@ jobs:
         run: echo "sdk.dir=${ANDROID_SDK_ROOT:-$ANDROID_HOME}" > local.properties
 
       - name: Assemble debug APK
-        run: ./gradlew :app:assembleDebug --no-daemon --stacktrace
+        run: sh ./gradlew :app:assembleDebug --no-daemon --stacktrace
         env:
           GRADLE_OPTS: "-Xmx3072m"
 
