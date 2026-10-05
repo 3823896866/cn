@@ -98,7 +98,7 @@ if(HAVE_LIVE2D)
     target_sources(imguidemo PRIVATE md3_live2d.cpp)
     target_link_libraries(imguidemo live2dapp)
 else()
-    target_sources(imguidemo PRIVATE live2d_stub.cpp)
+    target_sources(imguidemo PRIVATE live2d_stub.cpp ${CMAKE_CURRENT_SOURCE_DIR}/live2d/stb_image_impl.cpp)
 endif()
 
 # ---- FreeType 链接 ----
