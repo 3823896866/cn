@@ -8,53 +8,27 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material3.Icon
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.compositionLocalOf
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.kyant.backdrop.backdrops.LayerBackdrop
-import com.kyant.backdrop.backdrops.layerBackdrop
-import com.kyant.backdrop.backdrops.rememberLayerBackdrop
-import com.kyant.backdrop.drawBackdrop
-import com.kyant.backdrop.effects.blur
-import com.kyant.backdrop.effects.lens
 
 /**
- * 液态玻璃（Kyant0/Backdrop，GitHub 原版开源）统一入口。
+ * 液态玻璃统一入口（零第三方依赖的高仿降级版：毛玻璃近似 = 半透明 + 高光描边 + 投影）。
+ * 保证 minSdk/compileSdk 兼容、可直接编译出包。
  *
- * 用法：
- * 1. 在根部用 [LiquidGlassRoot] 包住内容（它会创建并"记录"背景层）。
- * 2. 需要玻璃的控件用 [GlassCard] / [GlassButton]（自动折射 [LiquidGlassRoot] 里的背景）。
- *
- * 降级：
- * - 在没被 LiquidGlassRoot 包裹的地方，GlassCard 自动退回"毛玻璃近似"（半透明+高光+投影），保证 minSdk 兼容。
- * - 库的折射（lens）需 RuntimeShader（API33+）、模糊（blur）需 RenderEffect（API31+）；
- *   低于此自动 no-op，不会崩。
+ * 如需"折射级一模一样"，后续把工具链升到 backdrop-android 2.0.1 要求
+ * （AGP 8.6+ / compileSdk 37 / Kotlin 2.x），再把 GlassCard 换成
+ * com.kyant.backdrop.drawBackdrop + effects.lens/blur 即可（改动只在此文件）。
  */
-val LocalGlassBackdrop = compositionLocalOf<LayerBackdrop?> { null }
 
-/** 液态玻璃根：记录背景层，供内部 GlassCard/GlassButton 折射。 */
+/** 液态玻璃根（降级版：仅容器） */
 @Composable
 fun LiquidGlassRoot(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
-    val backdrop = rememberLayerBackdrop()
-    CompositionLocalProvider(LocalGlassBackdrop provides backdrop) {
-        Box(modifier.layerBackdrop(backdrop)) { content() }
-    }
+    Box(modifier) { content() }
 }
 
 /** 液态玻璃卡片 */
@@ -65,30 +39,14 @@ fun GlassCard(
     corner: Int = 24,
     content: @Composable BoxScope.() -> Unit
 ) {
-    val backdrop = LocalGlassBackdrop.current
     val shape = RoundedCornerShape(corner.dp)
-    val px = LocalDensity.current.density
-    val glassModifier = modifier
-        .shadow((corner / 2).dp, shape, clip = false)
-        .then(
-            if (backdrop != null) {
-                // 折射级液态玻璃（原版 liquidGlass 折射 API）
-                Modifier.drawBackdrop(backdrop, { shape }) {
-                    blur((corner / 5).dp.value * px)
-                    lens(
-                        refractionHeight = 8.dp.value * px,
-                        refractionAmount = 16.dp.value * px,
-                        chromaticAberration = true
-                    )
-                }
-            } else {
-                // 降级：毛玻璃近似
-                Modifier.background(Color.White.copy(alpha = alpha))
-            }
-        )
-        .clip(shape)
-        .border(1.dp, Color.White.copy(alpha = 0.5f), shape)
-    Box(glassModifier) { content() }
+    Box(
+        modifier = modifier
+            .shadow((corner / 2).dp, shape, clip = false)
+            .clip(shape)
+            .background(Color.White.copy(alpha = alpha))
+            .border(1.dp, Color.White.copy(alpha = 0.5f), shape)
+    ) { content() }
 }
 
 /** 液态玻璃按钮 */
@@ -111,7 +69,7 @@ fun GlassButton(
     }
 }
 
-/** 玻璃底色（默认，视频/图片背景之上再叠一层玻璃感；可选） */
+/** 玻璃底色层（可选） */
 @Composable
 fun GlassBackdrop(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     Box(modifier) { content() }
