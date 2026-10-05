@@ -105,7 +105,7 @@ public final class ImguiHost {
     /** C++ 门禁页点"验证并进入"：异步验卡（保留上次输入的卡密到 prefs）。 */
     public void cardVerify(String key) {
         exec.execute(() -> {
-            boolean ok = com.xiaoran.nb.net.XrApi.verifyCard(key, deviceId());
+            boolean ok = com.xiaoran.nb.net.XrApi.INSTANCE.verifyCard(key, deviceId());
             ctx.getSharedPreferences("xiaoran_prefs", Context.MODE_PRIVATE).edit()
                     .putString("last_card", key).apply();
             nativeXrCardResult(ok, ok ? "验证通过" : "卡密无效，请重新输入");
@@ -159,7 +159,7 @@ public final class ImguiHost {
         exec.execute(() -> {
             try {
                 String card = ctx.getSharedPreferences("xiaoran_prefs", Context.MODE_PRIVATE).getString("last_card", "");
-                com.xiaoran.nb.net.XrApi.csMessage(card == null ? "" : card, deviceId(), text, "");
+                com.xiaoran.nb.net.XrApi.INSTANCE.csMessage(card == null ? "" : card, deviceId(), text, "");
             } catch (Throwable ignored) {}
         });
     }
@@ -169,7 +169,7 @@ public final class ImguiHost {
             try {
                 if (on == 0) { stopVideoInternal(); return; }
                 if (videoView != null) return;
-                String src = com.xiaoran.nb.net.XrApi.videoBgUrl();
+                String src = com.xiaoran.nb.net.XrApi.INSTANCE.videoBgUrl();
                 if (src == null || src.isEmpty()) src = "/sdcard/Download/xiaoran_bg.mp4";
                 videoView = new android.view.TextureView(ctx);
                 videoWm = (android.view.WindowManager) ctx.getSystemService(Context.WINDOW_SERVICE);
@@ -186,7 +186,7 @@ public final class ImguiHost {
                 videoWm.addView(videoView, lp);
                 videoMp = new android.media.MediaPlayer();
                 videoMp.setDataSource(src);
-                videoMp.setSurface(videoView.getSurface());
+                videoMp.setSurface(new android.view.Surface(videoView.getSurfaceTexture()));
                 videoMp.setLooping(true);
                 videoMp.setVolume(0.5f, 0.5f);
                 videoMp.start();
@@ -206,10 +206,11 @@ public final class ImguiHost {
         int t = nameTabUrl.indexOf('\t');
         if (t > 0) { name = nameTabUrl.substring(0, t); url = nameTabUrl.substring(t + 1); }
         exec.execute(() -> {
-            java.io.File dir = new java.io.File(com.xiaoran.nb.net.XrApi.importDir());
+            java.io.File dir = new java.io.File(com.xiaoran.nb.net.XrApi.INSTANCE.importDir());
             if (dir == null || !dir.exists()) dir = ctx.getExternalFilesDir("imports");
-            boolean ok = com.xiaoran.nb.net.XrApi.download(url, dir, name, p -> {
-                nativeXrDownloadProgress(name, p, p >= 1.0f);
+            boolean ok = com.xiaoran.nb.net.XrApi.INSTANCE.download(url, dir, name, p -> {
+                nativeXrDownloadProgress(name, p.floatValue(), p >= 1.0);
+                return kotlin.Unit.INSTANCE;
             });
             if (!ok) nativeXrDownloadProgress(name, 0f, false);
         });
@@ -219,8 +220,8 @@ public final class ImguiHost {
         exec.execute(() -> {
             try { stopMusic(); } catch (Throwable ignored) {}
             try {
-                mp = android.media.MediaPlayer.create(url);
-                if (mp != null) { mp.setDataSource(url); mp.prepare(); mp.start(); }
+                mp = new android.media.MediaPlayer();
+                mp.setDataSource(url); mp.prepare(); mp.start();
             } catch (Throwable t) { mp = null; }
         });
     }
