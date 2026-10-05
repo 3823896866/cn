@@ -406,19 +406,8 @@ class FloatingWindowService : Service() {
             return
         }
 
-        // Compose 液态玻璃面板（替代原 XML 面板 view_floating_panel）
-        val composeView = androidx.compose.ui.platform.AndroidComposeView.create(this) {
-            com.xiaoran.nb.ui.theme.MikasaTheme {
-                com.xiaoran.nb.ui.glass.GlassFloatingPanel(
-                    onClose = { hideFloatingWindow() },
-                    onZoomIn = { zoomPanel(1.15f) },
-                    onZoomOut = { zoomPanel(0.87f) },
-                    onOpenSettings = { showSettingsDialog() },
-                    onFloatToast = { msg -> showFloatToast(msg) }
-                )
-            }
-        }
-        floatView = composeView
+        // 悬浮面板：程序化 View（避免在 Service 内嵌 Compose 的跨版本兼容问题）
+        floatView = buildServicePanel()
 
         // 初始化布局参数
         val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -1005,6 +994,45 @@ class FloatingWindowService : Service() {
     }
 
     /** 按钮缩放面板 */
+    private fun buildServicePanel(): View {
+        val density = resources.displayMetrics.density
+        fun dpx(v: Int) = (v * density).toInt()
+        fun glassButton(label: String, action: () -> Unit): android.widget.Button =
+            android.widget.Button(this).apply {
+                text = label
+                isAllCaps = false
+                setTextColor(android.graphics.Color.WHITE)
+                setBackgroundColor(0x55FFFFFF.toInt())
+                setPadding(dpx(14), dpx(8), dpx(14), dpx(8))
+                setOnClickListener { action() }
+            }
+        val titleRow = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.HORIZONTAL
+            addView(android.widget.TextView(this@FloatingWindowService).apply {
+                text = "小染"; textSize = 18f; setTextColor(android.graphics.Color.WHITE); setPadding(0, 0, dpx(10), 0)
+            })
+            addView(glassButton("设置") { showSettingsDialog() })
+            addView(glassButton("关闭") { hideFloatingWindow() })
+        }
+        val zoomRow = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.HORIZONTAL
+            addView(glassButton("放大") { zoomPanel(1.15f) })
+            addView(glassButton("缩小") { zoomPanel(0.87f) })
+        }
+        return android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            background = android.graphics.drawable.GradientDrawable().apply {
+                cornerRadius = dpx(20).toFloat(); setColor(0x66000000.toInt())
+            }
+            setPadding(dpx(14), dpx(12), dpx(14), dpx(14))
+            addView(titleRow)
+            addView(zoomRow, android.widget.LinearLayout.LayoutParams(
+                android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dpx(10) })
+        }
+    }
+
     private fun zoomPanel(factor: Float) {
         if (floatView == null || layoutParams == null) return
         scaleFactor = (scaleFactor * factor).coerceIn(0.45f, 1.5f)
