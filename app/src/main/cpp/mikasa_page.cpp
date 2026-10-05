@@ -72,7 +72,7 @@ void MikasaPushFunctions(const char* text) {
         case 'N': {
             char nm[MI_MAX_NAME]; ClipName(nm, MI_MAX_NAME, nameBuf);
             g_miNavs.push_back(MiNav());
-            g_miNavs.back().label = nm;
+            snprintf(g_miNavs.back().label, MI_MAX_NAME, "%s", nm);
             g_miNavs.back().tabs.push_back(MiTab());
             break;
         }
@@ -80,7 +80,7 @@ void MikasaPushFunctions(const char* text) {
             if (g_miNavs.empty()) break;
             char nm[MI_MAX_NAME]; ClipName(nm, MI_MAX_NAME, nameBuf);
             g_miNavs.back().tabs.push_back(MiTab());
-            g_miNavs.back().tabs.back().label = nm;
+            snprintf(g_miNavs.back().tabs.back().label, MI_MAX_NAME, "%s", nm);
             break;
         }
         case 'I': case 'G': case 'C': case 'S': {
