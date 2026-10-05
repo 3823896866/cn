@@ -143,7 +143,12 @@ fun MainScreen() {
         persistChat(updated)
         aiLoading = true
         scope.launch {
-            val reply = withContext(Dispatchers.IO) { XiaoMiAi.chat(updated) }
+            val cardKey = prefs.getString("card_key", "") ?: ""
+            val device = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}"
+            val session = "xiaoran_chat"
+            val reply = withContext(Dispatchers.IO) {
+                com.xiaoran.nb.ui.model.BackendCs.send(cardKey, device, text, "", session) ?: XiaoMiAi.chat(updated)
+            }
             val next = XiaoMiAi.trimContext(updated + XiaoMiAi.Msg("assistant", reply))
             aiMessages = next
             persistChat(next)
@@ -152,7 +157,7 @@ fun MainScreen() {
     }
 
     fun clearAiChat() {
-        aiMessages = listOf(XiaoMiAi.Msg("assistant", "我是雷电法军⚡ 聊天已清空，随时找我喵~"))
+        aiMessages = listOf(XiaoMiAi.Msg("assistant", "我是小染，聊天已清空，随时找我喵~"))
         prefs.edit().remove("ai_chat").apply()
     }
 
@@ -342,10 +347,10 @@ private data class NavItem(val label: String, val icon: ImageVector?)
 
 private val navItems = listOf(
     NavItem("主页", Icons.Filled.Home),
-    NavItem("AI助手", Icons.Filled.Face),
+    NavItem("小染助手", Icons.Filled.Face),
     NavItem("音乐", null), // 音乐用自绘音符图标
     NavItem("权限", Icons.Filled.Lock),
-    NavItem("服务器", Icons.Filled.Person),
+    NavItem("文件", Icons.Filled.Person),
     NavItem("设置", Icons.Filled.Settings),
 )
 
@@ -610,7 +615,7 @@ private fun HomePage(
                     )
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        "「AI助手」页可找雷电法军聊天；「设置」页可开关灵动岛、自定义背景。",
+                        "「小染助手」页可找小染客服聊天；「设置」页可开关灵动岛、自定义背景。",
                         fontSize = 12.sp,
                         lineHeight = 18.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -883,7 +888,7 @@ private fun ServerPage() {
             .padding(horizontal = 20.dp, vertical = 20.dp)
     ) {
         EnterAnimation(0) {
-            Text("服务器", fontSize = 28.sp, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.onBackground)
+            Text("文件", fontSize = 28.sp, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.onBackground)
             Spacer(Modifier.height(6.dp))
             Text("选择要连接的服务器节点", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(20.dp))
