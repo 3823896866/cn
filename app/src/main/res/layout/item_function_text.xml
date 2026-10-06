@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 纯文字行：公告/卡密/设备信息，无勾选控件 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_margin="4dp"
+    android:background="@drawable/bg_function_item"
+    android:orientation="vertical"
+    android:paddingHorizontal="14dp"
+    android:paddingVertical="10dp">
+
+    <TextView
+        android:id="@+id/tv_function_name"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:lineSpacingExtra="3dp"
+        android:textColor="@color/text_primary"
+        android:textSize="14sp" />
+</LinearLayout>
