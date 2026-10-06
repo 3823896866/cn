@@ -125,6 +125,7 @@ class FloatingWindowService : Service() {
     private var cardVerified = false
     private var cardInfo = ""
     private var cardAnnouncements: List<String> = emptyList()
+    private var cardGatePageIndex = -1
     private val deviceName = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}"
 
     // 长按拖动
@@ -510,11 +511,6 @@ class FloatingWindowService : Service() {
                 hideFloatingWindow()
             }
 
-            // 设置按钮（悬浮窗UI设置：防录屏开关 + 音量键控制）
-            view.findViewById<ImageButton>(R.id.btn_settings).setOnClickListener {
-                showSettingsDialog()
-            }
-
             // 返回前进
             view.findViewById<ImageButton>(R.id.btn_back).setOnClickListener {
                 Toast.makeText(this, "返回", Toast.LENGTH_SHORT).show()
@@ -544,44 +540,6 @@ class FloatingWindowService : Service() {
             // 清除冻结按钮（右侧雪花）
             view.findViewById<ImageButton>(R.id.btn_fab).setOnClickListener {
                 showFloatToast("清除冻结成功")
-            }
-
-            // 搜索实时过滤
-            view.findViewById<EditText>(R.id.et_search).addTextChangedListener(object : TextWatcher {
-                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
-                override fun afterTextChanged(s: Editable?) {
-                    val adapter = tabPagerAdapter?.getAdapter(viewPager?.currentItem ?: 0)
-                    adapter?.filter(s?.toString() ?: "")
-                }
-            })
-
-            // 搜索框点击弹出键盘（悬浮窗默认NOT_FOCUSABLE，需临时切换焦点模式）
-            val etSearch = view.findViewById<EditText>(R.id.et_search)
-            etSearch.setOnFocusChangeListener { _, hasFocus ->
-                val lp = layoutParams ?: return@setOnFocusChangeListener
-                try {
-                    if (hasFocus) {
-                        // 允许获得焦点 → 弹出键盘
-                        lp.flags = lp.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()
-                        lp.flags = lp.flags or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
-                    } else {
-                        // 恢复不抢焦点
-                        lp.flags = lp.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-                    }
-                    windowManager.updateViewLayout(floatView, lp)
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
-            }
-            etSearch.setOnClickListener {
-                etSearch.requestFocus()
-                try {
-                    val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-                    imm.showSoftInput(etSearch, InputMethodManager.SHOW_IMPLICIT)
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
             }
 
             // 初始化导航和内容
@@ -663,12 +621,21 @@ class FloatingWindowService : Service() {
             adapter.setItems(pages[position])
             // 开关切换 → 自定义消息通知
             adapter.onToggle = { name, checked ->
-                if (name == "验证卡密" && checked) {
-                    val code = floatView?.findViewById<android.widget.EditText>(R.id.et_search)?.text?.toString()?.trim() ?: ""
-                    verifyCardKey(code)
-                } else {
-                    showFloatToast("${if (checked) "已开启" else "已关闭"} · $name")
+                showFloatToast("${if (checked) "已开启" else "已关闭"} · $name")
+            }
+            // 卡密门：首页未验证 → 显示「输入框+验证按钮」，隐藏功能列表
+            val gate = holder.itemView.findViewById<android.view.View>(R.id.card_gate)
+            if (position == cardGatePageIndex && !cardVerified) {
+                gate?.visibility = android.view.View.VISIBLE
+                rv.visibility = android.view.View.GONE
+                val etCard = gate?.findViewById<android.widget.EditText>(R.id.et_card)
+                gate?.findViewById<android.widget.Button>(R.id.btn_verify)?.setOnClickListener {
+                    verifyCardKey(etCard?.text?.toString()?.trim() ?: "")
                 }
+                etCard?.let { applyFocusToggle(it) }
+            } else {
+                gate?.visibility = android.view.View.GONE
+                rv.visibility = android.view.View.VISIBLE
             }
             rv.adapter = adapter
             // 列表项进场动画
@@ -810,32 +777,38 @@ class FloatingWindowService : Service() {
     private fun loadNavContent(navPosition: Int) {
         currentNavPosition = navPosition
         currentTabIndex = 0
+        cardGatePageIndex = if (navPosition == 0) 0 else -1
         val (tabs, pages) = buildTabData(navPosition)
         tabPagerAdapter?.setPages(pages)
         updateTabViews(tabs)
         viewPager?.setCurrentItem(0, false)
-        // 清空搜索框，恢复完整列表；首页未验证时搜索框作为卡密输入
-        val etSearch = floatView?.findViewById<EditText>(R.id.et_search)
-        etSearch?.setText("")
-        etSearch?.hint = if (navPosition == 0 && !cardVerified) "输入卡密解锁" else getString(R.string.search_hint)
     }
 
     /** 卡密门：首页功能项 */
     private fun cardGateItems(): List<FunctionAdapter.FunctionItem> {
-        if (cardVerified) {
-            val items = mutableListOf(
-                FunctionAdapter.FunctionItem("卡密：${cardInfo}"),
-                FunctionAdapter.FunctionItem("设备：$deviceName"),
-                FunctionAdapter.FunctionItem("公告")
-            )
-            if (cardAnnouncements.isEmpty()) items.add(FunctionAdapter.FunctionItem("暂无公告"))
-            else cardAnnouncements.forEach { items.add(FunctionAdapter.FunctionItem(it)) }
-            return items
-        }
-        return listOf(
-            FunctionAdapter.FunctionItem("验证卡密", type = FunctionAdapter.TYPE_SWITCH, isChecked = false),
-            FunctionAdapter.FunctionItem("卡密：未验证")
+        if (!cardVerified) return emptyList()
+        val items = mutableListOf(
+            FunctionAdapter.FunctionItem("卡密：${cardInfo}"),
+            FunctionAdapter.FunctionItem("设备：$deviceName"),
+            FunctionAdapter.FunctionItem("公告")
         )
+        if (cardAnnouncements.isEmpty()) items.add(FunctionAdapter.FunctionItem("暂无公告"))
+        else cardAnnouncements.forEach { items.add(FunctionAdapter.FunctionItem(it)) }
+        return items
+    }
+
+    /** 卡密输入框聚焦时临时允许窗口收焦点(弹键盘)，失焦恢复 */
+    private fun applyFocusToggle(v: android.view.View) {
+        v.setOnFocusChangeListener { _, hasFocus ->
+            val lp = layoutParams ?: return@setOnFocusChangeListener
+            try {
+                lp.flags = if (hasFocus)
+                    (lp.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()) or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+                else
+                    lp.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                windowManager.updateViewLayout(floatView, lp)
+            } catch (e: Exception) { e.printStackTrace() }
+        }
     }
 
     /** 验证卡密（后端）：成功→解锁并刷新首页，失败→提示 */
