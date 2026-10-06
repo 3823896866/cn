@@ -111,7 +111,7 @@ object FilesApi {
         if (!targetDir.exists()) targetDir.mkdirs()
         var count = 0
         java.util.zip.ZipFile(zipFile).use { zf ->
-            val it = zf.entries
+            val it = zf.entries()
             while (it.hasMoreElements()) {
                 val e = it.nextElement()
                 val outFile = java.io.File(targetDir, e.name)
