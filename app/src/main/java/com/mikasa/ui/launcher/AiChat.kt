@@ -1,6 +1,7 @@
 package com.mikasa.ui.launcher
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -37,6 +38,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -63,9 +67,9 @@ object XiaoMiAi {
 
     // 助手人设
     private val SYSTEM_PROMPT =
-        "你是小染，MikasaUI 的 AI 助手，说话简洁有趣，用中文回复。"
+        "你是小染，小染注入 的 AI 助手，说话简洁有趣，用中文回复。"
 
-    data class Msg(val role: String, val content: String)
+    data class Msg(val role: String, val content: String, val image: String = "")
 
     /** 调小染 AI API（阻塞，需在协程中调用） */
     fun chat(messages: List<Msg>): String {
@@ -119,7 +123,7 @@ object XiaoMiAi {
     /** 序列化到 prefs */
     fun save(messages: List<Msg>): String {
         val arr = JSONArray()
-        messages.forEach { arr.put(JSONObject().put("r", it.role).put("c", it.content)) }
+        messages.forEach { arr.put(JSONObject().put("r", it.role).put("c", it.content).put("i", it.image)) }
         return arr.toString()
     }
 
@@ -130,7 +134,7 @@ object XiaoMiAi {
             val arr = JSONArray(raw)
             (0 until arr.length()).map { i ->
                 val o = arr.getJSONObject(i)
-                Msg(o.optString("r"), o.optString("c"))
+                Msg(o.optString("r"), o.optString("c"), o.optString("i", ""))
             }
         } catch (e: Exception) {
             listOf(Msg("assistant", "我是小染助手，小染 AI 已就位，有什么不懂的问题来问我吧～"))
@@ -293,12 +297,49 @@ private fun ChatBubble(msg: XiaoMiAi.Msg) {
                 )
                 .padding(horizontal = 14.dp, vertical = 10.dp)
         ) {
-            Text(
-                msg.content,
-                fontSize = 14.sp,
-                lineHeight = 20.sp,
-                color = if (isUser) Color.White else MaterialTheme.colorScheme.onSurface
-            )
+            Column {
+                if (msg.image.isNotBlank()) RemoteImage(msg.image)
+                if (msg.content.isNotBlank()) {
+                    if (msg.image.isNotBlank()) Spacer(Modifier.height(6.dp))
+                    Text(
+                        msg.content,
+                        fontSize = 14.sp,
+                        lineHeight = 20.sp,
+                        color = if (isUser) Color.White else MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** 加载远程图片（agent 发的图）；加载中显示占位 */
+@Composable
+private fun RemoteImage(url: String) {
+    var bmp by remember(url) { mutableStateOf<ImageBitmap?>(null) }
+    LaunchedEffect(url) {
+        bmp = withContext(Dispatchers.IO) {
+            try {
+                val conn = URL(url).openConnection() as HttpURLConnection
+                conn.connectTimeout = 10000
+                conn.readTimeout = 15000
+                val bytes = conn.inputStream.use { it.readBytes() }
+                android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+            } catch (e: Exception) {
+                null
+            }
+        }
+    }
+    val b = bmp
+    if (b != null) {
+        Image(bitmap = b, contentDescription = null,
+            modifier = Modifier.widthIn(max = 240.dp).height(140.dp))
+    } else {
+        Box(
+            Modifier.size(80.dp, 60.dp).background(Color(0x11000000)),
+            contentAlignment = Alignment.Center
+        ) {
+            CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
         }
     }
 }
