@@ -665,9 +665,9 @@ class FloatingWindowService : Service() {
                 rv.visibility = android.view.View.GONE
                 val etCard = gate?.findViewById<android.widget.EditText>(R.id.et_card)
                 // 记住上次输入的卡密（prefill），但不自动登录，仍需点确认
-                if (etCard?.text?.toString().isNullOrEmpty()) {
-                    getSharedPreferences("mikasa_prefs", MODE_PRIVATE)
-                        .getString("card_key", "")?.let { etCard.setText(it) }
+                val savedKey = getSharedPreferences("mikasa_prefs", MODE_PRIVATE).getString("card_key", "")
+                if (!savedKey.isNullOrEmpty() && etCard?.text?.toString().isNullOrEmpty()) {
+                    etCard?.setText(savedKey)
                 }
                 gate?.findViewById<android.widget.Button>(R.id.btn_verify)?.setOnClickListener {
                     verifyCardKey(etCard?.text?.toString()?.trim() ?: "")
