@@ -227,99 +227,29 @@ fun MusicPage() {
     var keyword by remember { mutableStateOf("") }
     var songs by remember { mutableStateOf(listOf<MusicApi.Song>()) }
     var searching by remember { mutableStateOf(false) }
-    var current by remember { mutableStateOf<MusicApi.Song?>(null) }
-    var playing by remember { mutableStateOf(false) }
-    var loadingSong by remember { mutableStateOf(false) }
     var lyrics by remember { mutableStateOf("") }
     var showLyrics by remember { mutableStateOf(false) }
-    var hotIndex by remember { mutableStateOf(0) }
-    var isHotNow by remember { mutableStateOf(false) }
-    val hotSongs = remember { listOf("把回忆拼好给你", "小美满", "孤勇者", "起风了", "光年之外", "漠河舞厅") }
-    var hotAdvance: ((Int) -> Unit)? = null
 
-    // MediaPlayer 生命周期
-    val player = remember { MediaPlayer() }
-    DisposableEffect(Unit) {
-        onDispose {
-            runCatching { player.release() }
-        }
-    }
-
-    fun playSong(song: MusicApi.Song, isHot: Boolean = false) {
-        current = song
-        isHotNow = isHot
-        loadingSong = true
-        showLyrics = false
-        scope.launch {
-            val url = withContext(Dispatchers.IO) { MusicApi.resolvePlayUrl(song.id) }
-            val canPlay = withContext(Dispatchers.IO) { MusicApi.probeAudio(url) }
-            loadingSong = false
-            if (!canPlay) {
-                Toast.makeText(context, "该歌曲暂无版权或无法播放，试试别的歌", Toast.LENGTH_SHORT).show()
-                return@launch
-            }
-            try {
-                runCatching { player.reset() }
-                player.setDataSource(url)
-                player.setOnPreparedListener {
-                    it.start()
-                    playing = true
-                    // 同步给灵动岛
-                    MusicState.update(song.name, song.artist, true)
-                }
-                player.setOnCompletionListener {
-                    playing = false
-                    MusicState.update(song.name, song.artist, false)
-                    if (isHotNow) {
-                        hotIndex = (hotIndex + 1) % hotSongs.size
-                        hotAdvance?.invoke(hotIndex)
-                    }
-                }
-                player.setOnErrorListener { _, _, _ ->
-                    playing = false
-                    MusicState.isPlaying = false
-                    Toast.makeText(context, "播放出错", Toast.LENGTH_SHORT).show()
-                    true
-                }
-                player.prepareAsync()
-            } catch (e: Exception) {
-                Toast.makeText(context, "播放失败：${e.message}", Toast.LENGTH_SHORT).show()
-            }
-        }
-        // 拉取歌词
-        scope.launch {
-            lyrics = withContext(Dispatchers.IO) { MusicApi.getLyrics(song.id) }
-        }
-    }
-
-    fun playHot(i: Int) {
-        val nm = hotSongs[i % hotSongs.size]
-        scope.launch {
-            val found = withContext(Dispatchers.IO) { MusicApi.search(nm) }.firstOrNull()
-            if (found != null) { hotIndex = i; isHotNow = true; playSong(found, true) }
-            else if (i + 1 < hotSongs.size) playHot(i + 1)
-            else Toast.makeText(context, "热门歌曲暂不可播放", Toast.LENGTH_SHORT).show()
-        }
-    }
-    hotAdvance = ::playHot
-
+    // 常驻音乐引擎：不随页面销毁 → 切页/退软件继续播，只有手动暂停才停
     LaunchedEffect(Unit) {
-        // 进入音乐页自动播放热门
-        playHot(0)
+        MusicEngine.init(context)
+        if (!MusicEngine.isRunning()) MusicEngine.playHot(0)
+    }
+    val current = MusicEngine.current
+    val playing = MusicEngine.playing
+    val loadingSong = MusicEngine.loading
+    val hotSongs = MusicEngine.hotSongs
+
+    fun playSong(song: MusicApi.Song) { MusicEngine.play(song, false) }
+    fun playHot(i: Int) { MusicEngine.playHot(i) }
+    fun togglePlay() { MusicEngine.toggle() }
+
+    // 拉取当前歌歌词
+    LaunchedEffect(current?.id) {
+        val c = current
+        if (c != null) lyrics = withContext(Dispatchers.IO) { MusicApi.getLyrics(c.id) }
     }
 
-    fun togglePlay() {
-        if (current == null) return
-        if (playing) {
-            runCatching { player.pause() }
-            playing = false
-            MusicState.isPlaying = false
-        } else {
-            runCatching { player.start() }
-            playing = true
-            MusicState.isPlaying = true
-        }
-    }
 
     Column(
         modifier = Modifier
