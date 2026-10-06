@@ -74,6 +74,31 @@ class DynamicIsland(private val context: Context) {
         }
     }
 
+    private var recordDot: View? = null
+    var onRecordDotClick: (() -> Unit)? = null
+
+    /** 录屏红点：开关录屏时显示/隐藏，点击触发 onRecordDotClick */
+    fun setRecordDot(on: Boolean) {
+        val pill = pillView ?: return
+        if (on && recordDot == null) {
+            val d = dp(12)
+            val dot = View(context).apply {
+                layoutParams = android.widget.LinearLayout.LayoutParams(d, d).also {
+                    it.leftMargin = dp(6); it.rightMargin = dp(6)
+                }
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    shape = android.graphics.drawable.GradientDrawable.OVAL
+                    setColor(0xFFE53935.toInt())
+                }
+                isClickable = true; isFocusable = true
+                setOnClickListener { onRecordDotClick?.invoke() }
+            }
+            recordDot = dot
+            (pill as? android.view.ViewGroup)?.addView(dot, 0)
+        }
+        recordDot?.visibility = if (on) View.VISIBLE else View.GONE
+    }
+
     fun show() {
         if (pillView != null) return
         val inflater = LayoutInflater.from(context)
