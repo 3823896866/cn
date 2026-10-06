@@ -121,6 +121,12 @@ class FloatingWindowService : Service() {
     private var currentNavPosition: Int = 0
     private var currentTabIndex: Int = 0
 
+    // ── 卡密门 ──
+    private var cardVerified = false
+    private var cardInfo = ""
+    private var cardAnnouncements: List<String> = emptyList()
+    private val deviceName = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}"
+
     // 长按拖动
     private val mainHandler = Handler(Looper.getMainLooper())
     private var isLongPress: Boolean = false
@@ -406,6 +412,10 @@ class FloatingWindowService : Service() {
             return
         }
 
+        val cp = getSharedPreferences("mikasa_prefs", MODE_PRIVATE)
+        cardVerified = cp.getBoolean("card_verified", false)
+        cardInfo = cp.getString("card_info", "") ?: ""
+
         val inflater = LayoutInflater.from(this)
         floatView = inflater.inflate(R.layout.view_floating_panel, null)
 
@@ -597,7 +607,11 @@ class FloatingWindowService : Service() {
         )
 
         navAdapter = NavAdapter(navItems) { position, _ ->
-            loadNavContent(position)
+            if (position != 0 && !cardVerified) {
+                showFloatToast("请先输入卡密解锁")
+            } else {
+                loadNavContent(position)
+            }
         }
 
         recyclerView.adapter = navAdapter
@@ -649,7 +663,12 @@ class FloatingWindowService : Service() {
             adapter.setItems(pages[position])
             // 开关切换 → 自定义消息通知
             adapter.onToggle = { name, checked ->
-                showFloatToast("${if (checked) "已开启" else "已关闭"} · $name")
+                if (name == "验证卡密" && checked) {
+                    val code = floatView?.findViewById<android.widget.EditText>(R.id.et_search)?.text?.toString()?.trim() ?: ""
+                    verifyCardKey(code)
+                } else {
+                    showFloatToast("${if (checked) "已开启" else "已关闭"} · $name")
+                }
             }
             rv.adapter = adapter
             // 列表项进场动画
@@ -673,6 +692,9 @@ class FloatingWindowService : Service() {
 
     /** 根据导航项生成 Tab 与页面数据 */
     private fun buildTabData(navPosition: Int): Pair<List<String>, List<List<FunctionAdapter.FunctionItem>>> {
+        if (navPosition == 0) {
+            return listOf("卡密") to listOf(cardGateItems())
+        }
         val tabs = when (navPosition) {
             0 -> listOf(getString(R.string.tab_home))
             1 -> listOf(
@@ -777,8 +799,7 @@ class FloatingWindowService : Service() {
                     FunctionAdapter.FunctionItem(
                         "按钮示例", type = FunctionAdapter.TYPE_SWITCH, isChecked = false
                     ),
-                    FunctionAdapter.FunctionItem("欢迎使用三笠美化"),
-                    FunctionAdapter.FunctionItem("选择左侧菜单开始")
+                    FunctionAdapter.FunctionItem("选择左侧功能开始")
                 )
             }
         }
@@ -793,8 +814,53 @@ class FloatingWindowService : Service() {
         tabPagerAdapter?.setPages(pages)
         updateTabViews(tabs)
         viewPager?.setCurrentItem(0, false)
-        // 清空搜索框，恢复完整列表
-        floatView?.findViewById<EditText>(R.id.et_search)?.setText("")
+        // 清空搜索框，恢复完整列表；首页未验证时搜索框作为卡密输入
+        val etSearch = floatView?.findViewById<EditText>(R.id.et_search)
+        etSearch?.setText("")
+        etSearch?.hint = if (navPosition == 0 && !cardVerified) "输入卡密解锁" else getString(R.string.search_hint)
+    }
+
+    /** 卡密门：首页功能项 */
+    private fun cardGateItems(): List<FunctionAdapter.FunctionItem> {
+        if (cardVerified) {
+            val items = mutableListOf(
+                FunctionAdapter.FunctionItem("卡密：${cardInfo}"),
+                FunctionAdapter.FunctionItem("设备：$deviceName"),
+                FunctionAdapter.FunctionItem("公告")
+            )
+            if (cardAnnouncements.isEmpty()) items.add(FunctionAdapter.FunctionItem("暂无公告"))
+            else cardAnnouncements.forEach { items.add(FunctionAdapter.FunctionItem(it)) }
+            return items
+        }
+        return listOf(
+            FunctionAdapter.FunctionItem("验证卡密", type = FunctionAdapter.TYPE_SWITCH, isChecked = false),
+            FunctionAdapter.FunctionItem("卡密：未验证")
+        )
+    }
+
+    /** 验证卡密（后端）：成功→解锁并刷新首页，失败→提示 */
+    private fun verifyCardKey(code: String) {
+        if (code.isEmpty()) { showFloatToast("请先在搜索框输入卡密"); return }
+        Thread {
+            val r = com.mikasa.ui.XiaoRanApi.verifyCard(code, deviceName)
+            val ann = if (r.ok) com.mikasa.ui.XiaoRanApi.announcements() else emptyList()
+            mainHandler.post {
+                if (r.ok) {
+                    cardVerified = true
+                    cardInfo = "类型 ${r.type} · 到期 ${r.expiresAt.ifBlank { "永久" }}"
+                    cardAnnouncements = ann
+                    getSharedPreferences("mikasa_prefs", MODE_PRIVATE).edit()
+                        .putBoolean("card_verified", true)
+                        .putString("card_key", code)
+                        .putString("card_info", cardInfo)
+                        .apply()
+                    loadNavContent(0)
+                    showFloatToast("卡密验证成功，已解锁")
+                } else {
+                    showFloatToast("卡密无效：${r.reason.ifBlank { "未知" }}")
+                }
+            }
+        }.start()
     }
 
     /** 更新顶部Tab视图（点击联动ViewPager左右滑动） */
