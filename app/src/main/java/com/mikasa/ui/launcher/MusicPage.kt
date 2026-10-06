@@ -234,22 +234,13 @@ fun MusicPage() {
     var hotIndex by remember { mutableStateOf(0) }
     var isHotNow by remember { mutableStateOf(false) }
     val hotSongs = remember { listOf("把回忆拼好给你", "小美满", "孤勇者", "起风了", "光年之外", "漠河舞厅") }
+    var hotAdvance: ((Int) -> Unit)? = null
 
     // MediaPlayer 生命周期
     val player = remember { MediaPlayer() }
     DisposableEffect(Unit) {
         onDispose {
             runCatching { player.release() }
-        }
-    }
-
-    fun playHot(i: Int) {
-        val nm = hotSongs[i % hotSongs.size]
-        scope.launch {
-            val found = withContext(Dispatchers.IO) { MusicApi.search(nm) }.firstOrNull()
-            if (found != null) { hotIndex = i; isHotNow = true; playSong(found, true) }
-            else if (i + 1 < hotSongs.size) playHot(i + 1)
-            else Toast.makeText(context, "热门歌曲暂不可播放", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -280,7 +271,7 @@ fun MusicPage() {
                     MusicState.update(song.name, song.artist, false)
                     if (isHotNow) {
                         hotIndex = (hotIndex + 1) % hotSongs.size
-                        playHot(hotIndex)
+                        hotAdvance?.invoke(hotIndex)
                     }
                 }
                 player.setOnErrorListener { _, _, _ ->
@@ -299,6 +290,17 @@ fun MusicPage() {
             lyrics = withContext(Dispatchers.IO) { MusicApi.getLyrics(song.id) }
         }
     }
+
+    fun playHot(i: Int) {
+        val nm = hotSongs[i % hotSongs.size]
+        scope.launch {
+            val found = withContext(Dispatchers.IO) { MusicApi.search(nm) }.firstOrNull()
+            if (found != null) { hotIndex = i; isHotNow = true; playSong(found, true) }
+            else if (i + 1 < hotSongs.size) playHot(i + 1)
+            else Toast.makeText(context, "热门歌曲暂不可播放", Toast.LENGTH_SHORT).show()
+        }
+    }
+    hotAdvance = ::playHot
 
     LaunchedEffect(Unit) {
         // 进入音乐页自动播放热门
