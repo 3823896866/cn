@@ -6,7 +6,7 @@
     android:elevation="10dp"
     android:padding="4dp">
 
-    <com.xiaoran.nb.ui.view.CircleImageView
+    <com.mikasa.ui.view.CircleImageView
         android:id="@+id/iv_ball_avatar"
         android:layout_width="match_parent"
         android:layout_height="match_parent"

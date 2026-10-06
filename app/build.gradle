@@ -4,32 +4,19 @@ plugins {
 }
 
 android {
-    namespace 'com.xiaoran.nb'
+    namespace 'com.mikasa'
     compileSdk 34
-    // imgui 引擎 NDK（须与已装 NDK 一致；见 app/src/main/cpp 的 CMake）
-    ndkVersion = "27.1.12297006"
 
     defaultConfig {
-        applicationId "com.xiaoran.nb"
+        applicationId "com.mikasa"
         minSdk 24
         targetSdk 34
         versionCode 1
         versionName "6.1"
-
-        ndk {
-            // freetype 预编译库为 aarch64，只编 arm64-v8a
-            abiFilters += "arm64-v8a"
-        }
     }
 
     buildFeatures {
         compose true
-    }
-
-    externalNativeBuild {
-        cmake {
-            path "src/main/cpp/CMakeLists.txt"
-        }
     }
 
     composeOptions {
