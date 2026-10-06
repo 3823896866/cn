@@ -105,6 +105,7 @@
                     android:id="@+id/tab_container"
                     android:layout_width="wrap_content"
                     android:layout_height="match_parent"
+                    android:background="#4D000000"
                     android:gravity="center_vertical"
                     android:orientation="horizontal" />
             </HorizontalScrollView>
