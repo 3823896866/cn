@@ -18,6 +18,7 @@ import com.mikasa.R
  * - TYPE_GROUP       折叠组标题（点击展开/折叠，展开后显示子项）
  * - TYPE_GROUP_CHILD 折叠组子项（缩进显示 + 勾选框）
  * - TYPE_SWITCH      按钮开关（名称 + 开关，点击切换开/关）
+ * - TYPE_TEXT        纯文字行（公告/卡密/设备等信息，无勾选控件）
  */
 class FunctionAdapter(
     private val items: MutableList<FunctionItem> = mutableListOf()
@@ -28,6 +29,7 @@ class FunctionAdapter(
         const val TYPE_GROUP = 1
         const val TYPE_GROUP_CHILD = 2
         const val TYPE_SWITCH = 3
+        const val TYPE_TEXT = 4
     }
 
     /** 开关切换回调（名字, 是否开启） */
@@ -61,6 +63,7 @@ class FunctionAdapter(
         val layout = when (viewType) {
             TYPE_GROUP -> R.layout.item_function_group
             TYPE_SWITCH -> R.layout.item_function_switch
+            TYPE_TEXT -> R.layout.item_function_text
             else -> R.layout.item_function
         }
         val view = LayoutInflater.from(parent.context)
@@ -74,6 +77,7 @@ class FunctionAdapter(
             TYPE_GROUP -> bindGroup(holder, item)
             TYPE_GROUP_CHILD -> bindChild(holder, item)
             TYPE_SWITCH -> bindSwitch(holder, item)
+            TYPE_TEXT -> bindText(holder, item)
             else -> bindItem(holder, item)
         }
     }
@@ -90,6 +94,11 @@ class FunctionAdapter(
         holder.itemView.setOnClickListener {
             holder.checkBox?.isChecked = !(holder.checkBox?.isChecked ?: false)
         }
+    }
+
+    /** 纯文字行（无勾选控件，用于公告/卡密/设备信息展示） */
+    private fun bindText(holder: ViewHolder, item: FunctionItem) {
+        holder.name?.text = item.name
     }
 
     /** 折叠组标题 */
