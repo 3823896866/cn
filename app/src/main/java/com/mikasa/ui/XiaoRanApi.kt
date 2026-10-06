@@ -9,6 +9,9 @@ object XiaoRanApi {
 
     data class CardVerify(val ok: Boolean, val reason: String, val type: String, val expiresAt: String)
 
+    /** 客服发送结果：reply（机器人/未匹配回复）+ status(bot/human) + sessionId。 */
+    data class CsResult(val reply: String?, val status: String, val sessionId: String)
+
     private fun req(method: String, path: String, body: String? = null): String? {
         return try {
             val conn = java.net.URL(base + path).openConnection() as java.net.HttpURLConnection
@@ -53,12 +56,35 @@ object XiaoRanApi {
         }.getOrDefault(emptyList())
     }
 
-    /** 客服消息（后端可人工接管/配置问答）；离线返回 null（调用方回退本地）。 */
-    fun csSend(cardKey: String, device: String, text: String, image: String, sessionId: String): String? {
+    /** 发客服消息：返回 机器人回复 + 会话状态(bot/human)；离线返回 null（调用方回退本地）。 */
+    fun csSend(cardKey: String, device: String, text: String, image: String, sessionId: String): CsResult? {
         val r = req("POST", "/api/cs/message", JSONObject()
             .put("sessionId", sessionId).put("cardKey", cardKey)
             .put("device", device).put("text", text).put("image", image).toString())
             ?: return null
-        return runCatching { JSONObject(r).optString("reply", "") }.getOrNull()?.ifBlank { null }
+        return runCatching {
+            val o = JSONObject(r)
+            CsResult(
+                o.optString("reply", "").ifBlank { null },
+                o.optString("status", "bot"),
+                o.optString("sessionId", sessionId)
+            )
+        }.getOrNull()
+    }
+
+    /** 取某会话里客服(agent)已回复的消息（用于前端轮询接收人工回复）。 */
+    fun agentReplies(sessionId: String): List<String> {
+        val r = req("GET", "/api/cs/sessions?sid=" + java.net.URLEncoder.encode(sessionId, "UTF-8")) ?: return emptyList()
+        return runCatching {
+            val arr = JSONArray(r)
+            if (arr.length() == 0) emptyList() else {
+                val msgs = arr.getJSONObject(0).optJSONArray("messages") ?: JSONArray()
+                (0 until msgs.length()).mapNotNull { i ->
+                    val m = msgs.getJSONObject(i)
+                    if (m.optString("role") == "agent") m.optString("text").ifBlank { null }
+                    else null
+                }
+            }
+        }.getOrDefault(emptyList())
     }
 }
