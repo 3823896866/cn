@@ -87,4 +87,45 @@ object XiaoRanApi {
             }
         }.getOrDefault(emptyList())
     }
+
+    /** 使用人数（后端：当前有效卡密数，卡密到期自动减少）。失败返回 0。 */
+    fun activeUsers(): Int {
+        val r = req("GET", "/api/stats/active") ?: return 0
+        return runCatching { JSONObject(r).optInt("active", 0) }.getOrDefault(0)
+    }
+
+    /** 后端版本号。失败返回默认。 */
+    fun serverVersion(): String {
+        val r = req("GET", "/api/settings") ?: return "1.0"
+        return runCatching { JSONObject(r).optString("version", "").ifBlank { "1.0" } }.getOrDefault("1.0")
+    }
+
+    data class AgentMsg(val text: String, val image: String)
+
+    /** 取某会话里客服(agent)消息（含图片 URL）。失败返回空。 */
+    fun agentMessages(sessionId: String): List<AgentMsg> {
+        val r = req("GET", "/api/cs/sessions?sid=" + java.net.URLEncoder.encode(sessionId, "UTF-8")) ?: return emptyList()
+        return runCatching {
+            val arr = JSONArray(r)
+            if (arr.length() == 0) emptyList() else {
+                val msgs = arr.getJSONObject(0).optJSONArray("messages") ?: JSONArray()
+                (0 until msgs.length()).mapNotNull { i ->
+                    val m = msgs.getJSONObject(i)
+                    if (m.optString("role") == "agent") {
+                        val img = m.optString("image", "")
+                        AgentMsg(m.optString("text", ""), if (img.isBlank()) "" else base + "/uploads/" + img)
+                    } else null
+                }
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    /** 会话状态：bot/human/agent/ended。失败返回 bot。 */
+    fun csStatus(sessionId: String): String {
+        val r = req("GET", "/api/cs/sessions?sid=" + java.net.URLEncoder.encode(sessionId, "UTF-8")) ?: return "bot"
+        return runCatching {
+            val arr = JSONArray(r)
+            if (arr.length() == 0) "bot" else arr.getJSONObject(0).optString("status", "bot")
+        }.getOrDefault("bot")
+    }
 }
