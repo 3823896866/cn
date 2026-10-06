@@ -135,7 +135,7 @@ fun MainScreen() {
     // ── 卡密门（未验证时锁定其它页面）──
     var cardVerified by remember { mutableStateOf(prefs.getBoolean("card_verified", false)) }
     var cardKey by remember { mutableStateOf(prefs.getString("card_key", "") ?: "") }
-    var cardInfo by remember { mutableStateOf(prefs.getString("card_info", "")) }
+    var cardInfo by remember { mutableStateOf(prefs.getString("card_info", "") ?: "") }
     var announcements by remember { mutableStateOf<List<String>>(emptyList()) }
     val deviceName = remember { "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}" }
 
