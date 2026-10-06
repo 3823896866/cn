@@ -9,6 +9,8 @@
     <!-- Android 14+ 特殊用途前台服务必须声明 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- 读取外部存储（用于加载本地立绘） -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
@@ -17,9 +19,9 @@
     <application
         android:allowBackup="true"
         android:usesCleartextTraffic="true"
-        android:icon="@mipmap/ic_launcher"
+        android:icon="@drawable/ic_cat"
         android:label="@string/app_name"
-        android:roundIcon="@mipmap/ic_launcher_round"
+        android:roundIcon="@drawable/ic_cat"
         android:supportsRtl="true"
         android:theme="@style/Theme.MaterialComponents.DayNight.NoActionBar">
 
@@ -38,7 +40,7 @@
             android:name=".ui.FloatingWindowService"
             android:enabled="true"
             android:exported="false"
-android:foregroundServiceType="specialUse" />
+android:foregroundServiceType="specialUse|mediaProjection" />
 
         <!-- 音量键控制（无障碍服务）：音量减=隐藏UI 音量加=显示UI -->
         <service
@@ -60,5 +62,12 @@ android:foregroundServiceType="specialUse" />
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
+
+        <!-- 透明 Activity：请求系统录屏(MediaProjection)授权 -->
+        <activity
+            android:name=".ui.ProjectionHostActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
     </application>
 </manifest>
