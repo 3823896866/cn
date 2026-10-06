@@ -1,13 +1,67 @@
 <?xml version="1.0" encoding="utf-8"?>
-<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="match_parent">
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <LinearLayout
+        android:id="@+id/card_gate"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:padding="12dp"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="卡密验证"
+            android:textColor="@color/text_primary"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text="输入卡密，点击「验证」解锁全部功能"
+            android:textColor="@color/text_secondary"
+            android:textSize="12sp" />
+
+        <EditText
+            android:id="@+id/et_card"
+            android:layout_width="match_parent"
+            android:layout_height="44dp"
+            android:layout_marginTop="12dp"
+            android:background="@drawable/bg_search"
+            android:hint="请输入卡密"
+            android:inputType="text"
+            android:paddingHorizontal="10dp"
+            android:singleLine="true"
+            android:textColor="@color/text_primary"
+            android:textColorHint="@color/text_light"
+            android:textSize="13sp" />
+
+        <Button
+            android:id="@+id/btn_verify"
+            android:layout_width="match_parent"
+            android:layout_height="40dp"
+            android:layout_marginTop="12dp"
+            android:background="@drawable/bg_fab"
+            android:text="验证"
+            android:textAllCaps="false"
+            android:textColor="@color/white"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+    </LinearLayout>
 
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/rv_page"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
         android:clipToPadding="false"
         android:overScrollMode="never"
         android:paddingBottom="4dp" />
-</FrameLayout>
+</LinearLayout>
