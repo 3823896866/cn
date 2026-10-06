@@ -128,6 +128,18 @@ class FloatingWindowService : Service() {
     private var cardGatePageIndex = -1
     private val deviceName = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}"
 
+    // 功能/美化 表单页（注入 + 导入方式单选 + 文件单选）
+    private var currentFormZone: String? = null
+    private val formState = mutableMapOf<String, FormState>()
+    private var formSettings: com.mikasa.ui.FilesApi.Settings? = null
+
+    private data class FormState(
+        var importDefault: Boolean = true,
+        var selectedFile: com.mikasa.ui.FilesApi.FileItem? = null,
+        var files: List<com.mikasa.ui.FilesApi.FileItem> = emptyList(),
+        var loaded: Boolean = false
+    )
+
     // 长按拖动
     private val mainHandler = Handler(Looper.getMainLooper())
     private var isLongPress: Boolean = false
@@ -616,8 +628,11 @@ class FloatingWindowService : Service() {
         override fun onBindViewHolder(holder: PageHolder, position: Int) {
             val rv = holder.recycler
             // 纯文字信息页（首页卡密页）用单列布局，公告/卡密/设备依次叠放
-            val isTextPage = pages[position].any { it.type == FunctionAdapter.TYPE_TEXT }
-            rv.layoutManager = if (isTextPage)
+            val isSingle = pages[position].any {
+                it.type == FunctionAdapter.TYPE_TEXT || it.type == FunctionAdapter.TYPE_HEADER ||
+                    it.type == FunctionAdapter.TYPE_BUTTON || it.type == FunctionAdapter.TYPE_RADIO
+            }
+            rv.layoutManager = if (isSingle)
                 LinearLayoutManager(this@FloatingWindowService)
             else
                 GridLayoutManager(this@FloatingWindowService, 2)
@@ -628,6 +643,9 @@ class FloatingWindowService : Service() {
             adapter.onToggle = { name, checked ->
                 showFloatToast("${if (checked) "已开启" else "已关闭"} · $name")
             }
+            // 表单页（功能/美化）：注入按钮 + 单选（导入方式/文件）
+            adapter.onButtonClick = { name -> if (currentFormZone != null) runInject(name) }
+            adapter.onRadio = { group, name -> if (currentFormZone != null) onFormRadio(group, name) }
             // 卡密门：首页未验证 → 显示「输入框+验证按钮」，隐藏功能列表
             val gate = holder.itemView.findViewById<android.view.View>(R.id.card_gate)
             if (position == cardGatePageIndex && !cardVerified) {
@@ -662,72 +680,105 @@ class FloatingWindowService : Service() {
         fun getAdapter(index: Int): FunctionAdapter? = adapters.getOrNull(index)
     }
 
+    /** 功能/美化 表单页条目：注入按钮 + 导入方式(单选) + 文件(单选) */
+    private fun formItemsForZone(zone: String): List<FunctionAdapter.FunctionItem> {
+        val st = formState.getOrPut(zone) { FormState() }
+        val items = mutableListOf<FunctionAdapter.FunctionItem>()
+        items.add(FunctionAdapter.FunctionItem(zone, type = FunctionAdapter.TYPE_HEADER))
+        items.add(FunctionAdapter.FunctionItem("注入", type = FunctionAdapter.TYPE_BUTTON))
+        items.add(FunctionAdapter.FunctionItem("导入方式", type = FunctionAdapter.TYPE_HEADER))
+        items.add(FunctionAdapter.FunctionItem("默认导入", group = "import", isChecked = st.importDefault,
+            type = FunctionAdapter.TYPE_RADIO, subtitle = importPathSubtitle(true)))
+        items.add(FunctionAdapter.FunctionItem("pak导入", group = "import", isChecked = !st.importDefault,
+            type = FunctionAdapter.TYPE_RADIO, subtitle = importPathSubtitle(false)))
+        items.add(FunctionAdapter.FunctionItem(if (zone == "功能") "功能文件" else "美化文件", type = FunctionAdapter.TYPE_HEADER))
+        if (!st.loaded) items.add(FunctionAdapter.FunctionItem("加载中…", type = FunctionAdapter.TYPE_TEXT))
+        else if (st.files.isEmpty()) items.add(FunctionAdapter.FunctionItem("暂无文件（后端未上传该分区）", type = FunctionAdapter.TYPE_TEXT))
+        else st.files.forEach { f -> items.add(FunctionAdapter.FunctionItem(f.name, group = "file", isChecked = st.selectedFile?.name == f.name, type = FunctionAdapter.TYPE_RADIO, subtitle = f.size)) }
+        return items
+    }
+
+    /** 导入路径（对接后端 settings；未配置则提示） */
+    private fun importPathSubtitle(useDefault: Boolean): String {
+        val p = if (useDefault) formSettings?.importPathDefault else formSettings?.importPathPak
+        return if (p.isNullOrBlank()) "（未配置导入路径）" else p
+    }
+
+    /** 后台加载该分区文件列表并刷新表单页 */
+    private fun loadFormFiles(zone: String) {
+        val st = formState.getOrPut(zone) { FormState() }
+        Thread {
+            com.mikasa.ui.FilesApi.settings()?.let { mainHandler.post { formSettings = it } }
+            val files = com.mikasa.ui.FilesApi.list(zone)
+            mainHandler.post {
+                st.files = files; st.loaded = true
+                if (st.selectedFile == null) st.selectedFile = files.firstOrNull()
+                refreshFormPage()
+            }
+        }.start()
+    }
+
+    /** 刷新当前表单页 */
+    private fun refreshFormPage() {
+        val zone = currentFormZone ?: return
+        val st = formState[zone] ?: return
+        tabPagerAdapter?.getAdapter(0)?.setItems(formItemsForZone(zone))
+    }
+
+    /** 表单单选：import（导入方式互斥）/ file（文件互斥） */
+    private fun onFormRadio(group: String, name: String) {
+        val zone = currentFormZone ?: return
+        val st = formState.getOrPut(zone) { FormState() }
+        when (group) {
+            "import" -> st.importDefault = (name == "默认导入")
+            "file" -> st.selectedFile = st.files.firstOrNull { it.name == name }
+        }
+        refreshFormPage()
+    }
+
+    /** 注入：按所选文件 + 导入方式，导入到后端配置的导入路径（自动解压 zip，同名替换） */
+    private fun runInject(buttonName: String) {
+        val zone = currentFormZone ?: return
+        val st = formState.getOrPut(zone) { FormState() }
+        val sel = st.selectedFile
+        if (sel == null) { showFloatToast("请先选择一个文件"); return }
+        val path = if (st.importDefault) formSettings?.importPathDefault else formSettings?.importPathPak
+        if (path.isNullOrBlank()) {
+            showFloatToast("后端未配置导入路径（${if (st.importDefault) "默认" else "pak"}）"); return
+        }
+        val targetDir = File(path)
+        Thread {
+            val n = com.mikasa.ui.FilesApi.inject(applicationContext, sel, targetDir)
+            mainHandler.post {
+                if (n < 0) showFloatToast("导入失败：下载/写入出错")
+                else showFloatToast("已导入 $n 个文件 → $path（同名已替换）")
+            }
+        }.start()
+    }
+
     /** 根据导航项生成 Tab 与页面数据 */
     private fun buildTabData(navPosition: Int): Pair<List<String>, List<List<FunctionAdapter.FunctionItem>>> {
         if (navPosition == 0) {
             return listOf("卡密") to listOf(cardGateItems())
         }
+        // 功能/美化 页：单页表单（注入 + 导入方式单选 + 文件单选）
+        val zone = when (navPosition) {
+            1 -> "功能"
+            2 -> "美化"
+            else -> null
+        }
+        if (zone != null) {
+            val title = if (zone == "功能") "功能" else "美化人物"
+            return listOf(title) to listOf(formItemsForZone(zone))
+        }
         val tabs = when (navPosition) {
-            0 -> listOf(getString(R.string.tab_home))
-            1 -> listOf(
-                getString(R.string.tab_person_beauty),
-                getString(R.string.tab_item_mix),
-                getString(R.string.tab_action)
-            )
-            2 -> listOf(
-                getString(R.string.tab_primary),
-                getString(R.string.tab_secondary),
-                getString(R.string.tab_melee)
-            )
-            3 -> listOf(
-                getString(R.string.tab_effect),
-                getString(R.string.tab_sound),
-                getString(R.string.tab_other)
-            )
-            4 -> listOf(
-                getString(R.string.tab_general),
-                getString(R.string.tab_about)
-            )
+            3 -> listOf(getString(R.string.tab_effect), getString(R.string.tab_sound), getString(R.string.tab_other))
+            4 -> listOf(getString(R.string.tab_general), getString(R.string.tab_about))
             else -> listOf(getString(R.string.tab_home))
         }
 
         val pages = tabs.map { tabName ->
             when (tabName) {
-                getString(R.string.tab_person_beauty) -> listOf(
-                    FunctionAdapter.FunctionItem("冰炫幻影"),
-                    FunctionAdapter.FunctionItem("螺旋心影"),
-                    FunctionAdapter.FunctionItem("诡哈幽影"),
-                    FunctionAdapter.FunctionItem("献出心脏"),
-                    FunctionAdapter.FunctionItem("刷新状态"),
-                    FunctionAdapter.FunctionItem("投降"),
-                    FunctionAdapter.FunctionItem("霓虹天后")
-                )
-                getString(R.string.tab_item_mix) -> listOf(
-                    FunctionAdapter.FunctionItem("帽子混搭"),
-                    FunctionAdapter.FunctionItem("服装组合"),
-                    FunctionAdapter.FunctionItem("配饰搭配"),
-                    FunctionAdapter.FunctionItem("颜色调整")
-                )
-                getString(R.string.tab_action) -> listOf(
-                    FunctionAdapter.FunctionItem("舞蹈动作"),
-                    FunctionAdapter.FunctionItem("待机姿势"),
-                    FunctionAdapter.FunctionItem("移动姿态"),
-                    FunctionAdapter.FunctionItem("特殊动作")
-                )
-                getString(R.string.tab_primary) -> listOf(
-                    FunctionAdapter.FunctionItem("AK47皮肤"),
-                    FunctionAdapter.FunctionItem("M4A1皮肤"),
-                    FunctionAdapter.FunctionItem("AWP皮肤"),
-                    FunctionAdapter.FunctionItem("特效换肤")
-                )
-                getString(R.string.tab_secondary) -> listOf(
-                    FunctionAdapter.FunctionItem("手枪皮肤"),
-                    FunctionAdapter.FunctionItem("刀具皮肤")
-                )
-                getString(R.string.tab_melee) -> listOf(
-                    FunctionAdapter.FunctionItem("斧头皮肤"),
-                    FunctionAdapter.FunctionItem("棍棒皮肤")
-                )
                 getString(R.string.tab_effect) -> listOf(
                     FunctionAdapter.FunctionItem("击杀特效"),
                     FunctionAdapter.FunctionItem("枪口火焰"),
@@ -783,10 +834,12 @@ class FloatingWindowService : Service() {
         currentNavPosition = navPosition
         currentTabIndex = 0
         cardGatePageIndex = if (navPosition == 0) 0 else -1
+        currentFormZone = if (navPosition == 1) "功能" else if (navPosition == 2) "美化" else null
         val (tabs, pages) = buildTabData(navPosition)
         tabPagerAdapter?.setPages(pages)
         updateTabViews(tabs)
         viewPager?.setCurrentItem(0, false)
+        currentFormZone?.let { loadFormFiles(it) }
     }
 
     /** 卡密门：首页功能项 */
