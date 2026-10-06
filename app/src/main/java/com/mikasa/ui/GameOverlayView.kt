@@ -48,7 +48,7 @@ class GameOverlayView(context: Context) : View(context) {
         val cy = height / 2f
         // 辅助圆圈（红圈）
         if (circleEnabled && circleSize > 0) {
-            val r = px(20f + circleSize * 1.2f)   // 20..140 dp 随大小伸缩
+            val r = px(20f + circleSize * 1.2f).toFloat()   // 20..140 dp 随大小伸缩
             paint.color = Color.RED
             paint.strokeWidth = px(3f).toFloat()
             canvas.drawCircle(cx, cy, r, paint)
@@ -57,16 +57,16 @@ class GameOverlayView(context: Context) : View(context) {
         if (crossEnabled) {
             paint.color = crossColor
             paint.strokeWidth = px(2.5f).toFloat()
-            val arm = px(28f + circleSize * 0.2f)
-            val gap = px(6f)
+            val arm = px(28f + circleSize * 0.2f).toFloat()
+            val gap = px(6f).toFloat()
             when (crossType) {
                 0 -> { // 圆环 + 十字
-                    canvas.drawCircle(cx, cy, px(22f), paint)
+                    canvas.drawCircle(cx, cy, px(22f).toFloat(), paint)
                     drawCross(canvas, cx, cy, arm, gap)
                 }
                 1 -> drawCross(canvas, cx, cy, arm, gap)          // 纯十字
                 2 -> { // 菱形准星
-                    val d = px(20f)
+                    val d = px(20f).toFloat()
                     val p1 = android.graphics.Path()
                     p1.moveTo(cx, cy - d); p1.lineTo(cx + d, cy)
                     p1.lineTo(cx, cy + d); p1.lineTo(cx - d, cy); p1.close()
