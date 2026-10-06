@@ -132,6 +132,33 @@ fun MainScreen() {
     var aiMessages by remember { mutableStateOf(XiaoMiAi.load(prefs.getString("ai_chat", null))) }
     var aiLoading by remember { mutableStateOf(false) }
 
+    // ── 卡密门（未验证时锁定其它页面）──
+    var cardVerified by remember { mutableStateOf(prefs.getBoolean("card_verified", false)) }
+    var cardKey by remember { mutableStateOf(prefs.getString("card_key", "") ?: "") }
+    var cardInfo by remember { mutableStateOf(prefs.getString("card_info", "")) }
+    var announcements by remember { mutableStateOf<List<String>>(emptyList()) }
+    val deviceName = remember { "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}" }
+
+    fun verifyCard() {
+        val code = cardKey.trim()
+        if (code.isEmpty()) { Toast.makeText(context, "请输入卡密", Toast.LENGTH_SHORT).show(); return }
+        scope.launch {
+            val r = withContext(Dispatchers.IO) { com.mikasa.ui.XiaoRanApi.verifyCard(code, deviceName) }
+            if (r.ok) {
+                val info = "类型 ${r.type} · 到期 ${r.expiresAt.ifBlank { "永久" }} · 设备 ${deviceName}"
+                cardVerified = true; cardInfo = info
+                prefs.edit().putBoolean("card_verified", true).putString("card_key", code).putString("card_info", info).apply()
+                announcements = withContext(Dispatchers.IO) { com.mikasa.ui.XiaoRanApi.announcements() }
+            } else {
+                Toast.makeText(context, r.reason.ifBlank { "卡密无效" }, Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    LaunchedEffect(cardVerified) {
+        if (cardVerified) announcements = withContext(Dispatchers.IO) { com.mikasa.ui.XiaoRanApi.announcements() }
+    }
+
     fun persistChat(list: List<XiaoMiAi.Msg>) {
         prefs.edit().putString("ai_chat", XiaoMiAi.save(list)).apply()
     }
@@ -143,7 +170,10 @@ fun MainScreen() {
         persistChat(updated)
         aiLoading = true
         scope.launch {
-            val reply = withContext(Dispatchers.IO) { XiaoMiAi.chat(updated) }
+            val ck = prefs.getString("card_key", "") ?: ""
+            val reply = withContext(Dispatchers.IO) {
+                com.mikasa.ui.XiaoRanApi.csSend(ck, deviceName, text, "", "xiaoran_chat") ?: XiaoMiAi.chat(updated)
+            }
             val next = XiaoMiAi.trimContext(updated + XiaoMiAi.Msg("assistant", reply))
             aiMessages = next
             persistChat(next)
@@ -191,12 +221,22 @@ fun MainScreen() {
     val pagerState = rememberPagerState(pageCount = { 6 })
     val currentPage by remember { derivedStateOf { pagerState.currentPage } }
 
+    LaunchedEffect(cardVerified, currentPage) {
+        if (!cardVerified && currentPage > 0) pagerState.scrollToPage(0)
+    }
+
     Scaffold(
         containerColor = Color.Transparent,
         bottomBar = {
             BottomNavBar(
                 current = currentPage,
-                onSelect = { index -> scope.launch { pagerState.animateScrollToPage(index) } }
+                onSelect = { index ->
+                    if (!cardVerified && index != 0) {
+                        Toast.makeText(context, "请先在「主页」输入卡密并验证", Toast.LENGTH_SHORT).show()
+                    } else {
+                        scope.launch { pagerState.animateScrollToPage(index) }
+                    }
+                }
             )
         }
     ) { innerPadding ->
@@ -243,10 +283,14 @@ fun MainScreen() {
                 ) {
                     when (page) {
                         0 -> HomePage(
+                            cardKey = cardKey,
+                            onCardKeyChange = { cardKey = it },
+                            cardVerified = cardVerified,
+                            cardInfo = cardInfo,
+                            announcements = announcements,
+                            deviceName = deviceName,
+                            onVerify = { verifyCard() },
                             svcRunning = svcRunning,
-                            moduleCount = totalModuleCount,
-                            todayActivations = todayActivations,
-                            latency = latency,
                             onLaunch = {
                                 // 真实激活计数
                                 val n = prefs.getInt("today_activations", 0) + 1
@@ -440,10 +484,14 @@ private fun EnterAnimation(delayMs: Int = 0, content: @Composable () -> Unit) {
 
 @Composable
 private fun HomePage(
+    cardKey: String,
+    onCardKeyChange: (String) -> Unit,
+    cardVerified: Boolean,
+    cardInfo: String,
+    announcements: List<String>,
+    deviceName: String,
+    onVerify: () -> Unit,
     svcRunning: Boolean,
-    moduleCount: Int,
-    todayActivations: Int,
-    latency: String,
     onLaunch: () -> Unit,
     onStop: () -> Unit
 ) {
@@ -455,65 +503,88 @@ private fun HomePage(
             .padding(horizontal = 20.dp, vertical = 20.dp)
     ) {
         EnterAnimation(0) {
-            Text("Mikasa", fontSize = 34.sp, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.onBackground)
-            Text("悬浮窗控制台", fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("小染自动注入", fontSize = 34.sp, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.onBackground)
+            Text("输入卡密解锁 · 查看公告与设备", fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(20.dp))
         }
 
-        EnterAnimation(80) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(IntrinsicSize.Min),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    AppCard(modifier = Modifier.fillMaxWidth().weight(1f)) {
-                        Column {
-                            Text("功能模块", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Spacer(Modifier.height(4.dp))
-                            Text("$moduleCount", fontSize = 26.sp, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.onSurface)
-                        }
-                    }
-                    AppCard(modifier = Modifier.fillMaxWidth().weight(1f)) {
-                        Column {
-                            Text("今日激活", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Spacer(Modifier.height(4.dp))
-                            Text("$todayActivations", fontSize = 26.sp, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.onSurface)
-                        }
-                    }
+        EnterAnimation(60) {
+            AppCard(modifier = Modifier.fillMaxWidth()) {
+                Text("卡密", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    androidx.compose.material3.OutlinedTextField(
+                        value = cardKey,
+                        onValueChange = onCardKeyChange,
+                        modifier = Modifier.weight(1f),
+                        placeholder = { Text("请输入卡密") },
+                        singleLine = true
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Button(onClick = onVerify) { Text("验证") }
                 }
             }
         }
-
         Spacer(Modifier.height(12.dp))
 
-        EnterAnimation(160) {
-            AppCard(modifier = Modifier.fillMaxWidth()) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.Info, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
-                    Spacer(Modifier.width(10.dp))
-                    Column {
-                        Text("悬浮窗服务", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            "点击启动悬浮窗，顶部显示灵动岛（帧率/温度/音乐），点开查看详情。",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            lineHeight = 18.sp
-                        )
+        if (cardVerified) {
+            EnterAnimation(100) {
+                AppCard(modifier = Modifier.fillMaxWidth(), backgroundColor = MaterialTheme.colorScheme.secondary) {
+                    Text("卡密已验证", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSecondary)
+                    Spacer(Modifier.height(6.dp))
+                    Text(cardInfo, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface)
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+            EnterAnimation(140) {
+                AppCard(modifier = Modifier.fillMaxWidth()) {
+                    Text("公告", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                    Spacer(Modifier.height(8.dp))
+                    if (announcements.isEmpty()) {
+                        Text("暂无公告", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else {
+                        announcements.forEach { a ->
+                            Text(a, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface, lineHeight = 18.sp)
+                            Spacer(Modifier.height(8.dp))
+                        }
                     }
                 }
             }
+            Spacer(Modifier.height(12.dp))
+            EnterAnimation(180) {
+                AppCard(modifier = Modifier.fillMaxWidth()) {
+                    Text("设备", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                    Spacer(Modifier.height(6.dp))
+                    Text(deviceName, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface)
+                }
+            }
+            Spacer(Modifier.height(16.dp))
+        } else {
+            EnterAnimation(100) {
+                AppCard(modifier = Modifier.fillMaxWidth()) {
+                    Text("未验证", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color(0xFFE53935))
+                    Spacer(Modifier.height(6.dp))
+                    Text("请输入有效卡密并验证。验证通过前，其它页面无法打开。", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            Spacer(Modifier.height(16.dp))
         }
 
-        Spacer(Modifier.height(16.dp))
+        EnterAnimation(220) {
+            AppCard(modifier = Modifier.fillMaxWidth(), backgroundColor = MaterialTheme.colorScheme.secondary) {
+                Text("运行状态", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSecondary.copy(alpha = 0.7f))
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    if (svcRunning) "运行正常" else "未运行",
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Black,
+                    color = MaterialTheme.colorScheme.onSecondary
+                )
+            }
+        }
+        Spacer(Modifier.height(12.dp))
 
-        // 启动按钮（AI 动画）
-        EnterAnimation(240) {
+        EnterAnimation(260) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -530,10 +601,8 @@ private fun HomePage(
                 }
             }
         }
-
         Spacer(Modifier.height(12.dp))
 
-        // 关闭按钮
         EnterAnimation(300) {
             Box(
                 modifier = Modifier
@@ -549,34 +618,6 @@ private fun HomePage(
                     Icon(Icons.Filled.Close, null, tint = Color(0xFFE53935), modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
                     Text("关闭悬浮窗", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color(0xFFE53935))
-                }
-            }
-        }
-
-        Spacer(Modifier.height(16.dp))
-
-        EnterAnimation(360) {
-            AppCard(modifier = Modifier.fillMaxWidth()) {
-                Column {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Filled.CheckCircle, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("网络延迟（真实测量）", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        latency,
-                        fontSize = 22.sp,
-                        fontWeight = FontWeight.Black,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        "「小染助手」页可找小染 AI 聊天；「设置」页可开关灵动岛、自定义背景。",
-                        fontSize = 12.sp,
-                        lineHeight = 18.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
                 }
             }
         }
