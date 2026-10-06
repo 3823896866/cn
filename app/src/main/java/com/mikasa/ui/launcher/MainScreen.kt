@@ -942,7 +942,7 @@ private fun FilesPage() {
         Spacer(Modifier.height(16.dp))
 
         if (loading && funcFiles.isEmpty() && beautyFiles.isEmpty()) {
-            Row(Modifier.fillMaxWidth().padding(vertical = 40.dp), verticalAlignment = Alignment.Center) {
+            Row(Modifier.fillMaxWidth().padding(vertical = 40.dp), verticalAlignment = Alignment.CenterVertically) {
                 Spacer(Modifier.weight(1f))
                 androidx.compose.material3.CircularProgressIndicator(modifier = Modifier.size(24.dp))
                 Spacer(Modifier.width(12.dp))
