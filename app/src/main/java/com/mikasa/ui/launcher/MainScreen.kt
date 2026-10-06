@@ -152,7 +152,7 @@ fun MainScreen() {
     }
 
     fun clearAiChat() {
-        aiMessages = listOf(XiaoMiAi.Msg("assistant", "我是雷电法军⚡ 聊天已清空，随时找我喵~"))
+        aiMessages = listOf(XiaoMiAi.Msg("assistant", "我是小染助手，聊天已清空，随时找我喵~"))
         prefs.edit().remove("ai_chat").apply()
     }
 
@@ -348,7 +348,7 @@ private data class NavItem(val label: String, val icon: ImageVector?)
 
 private val navItems = listOf(
     NavItem("主页", Icons.Filled.Home),
-    NavItem("AI助手", Icons.Filled.Face),
+    NavItem("小染助手", Icons.Filled.Face),
     NavItem("音乐", null), // 音乐用自绘音符图标
     NavItem("权限", Icons.Filled.Lock),
     NavItem("文件", Icons.Filled.Person),
@@ -572,7 +572,7 @@ private fun HomePage(
                     )
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        "「AI助手」页可找雷电法军聊天；「设置」页可开关灵动岛、自定义背景。",
+                        "「小染助手」页可找小染 AI 聊天；「设置」页可开关灵动岛、自定义背景。",
                         fontSize = 12.sp,
                         lineHeight = 18.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -892,6 +892,22 @@ private fun grantShizuku(context: Context): Boolean = try {
 private fun FilesPage() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val pickZip = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            val msg = withContext(Dispatchers.IO) {
+                runCatching {
+                    val zip = context.cacheDir.resolve("import_${System.currentTimeMillis()}.zip")
+                    context.contentResolver.openInputStream(uri)!!.use { ins -> zip.outputStream().use { ins.copyTo(it) } }
+                    val target = com.mikasa.ui.FilesApi.xiaoranDir(context)
+                    val n = com.mikasa.ui.FilesApi.importZip(zip, target)
+                    zip.delete()
+                    "已导入 $n 个文件到「小染注入」文件夹（同名已替换）：${target.absolutePath}"
+                }.fold({ it }, { "导入失败：${it.message ?: it}" })
+            }
+            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+        }
+    }
     var funcFiles by remember { mutableStateOf<List<com.mikasa.ui.FilesApi.FileItem>>(emptyList()) }
     var beautyFiles by remember { mutableStateOf<List<com.mikasa.ui.FilesApi.FileItem>>(emptyList()) }
     var loading by remember { mutableStateOf(false) }
@@ -911,9 +927,8 @@ private fun FilesPage() {
     fun download(item: com.mikasa.ui.FilesApi.FileItem) {
         scope.launch {
             downloading = downloading + (item.name to 0.0)
-            val dest = context.getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS) ?: context.filesDir
             val res = withContext(Dispatchers.IO) {
-                com.mikasa.ui.FilesApi.download(item, dest) { p -> downloading = downloading + (item.name to p) }
+                com.mikasa.ui.FilesApi.downloadToPublic(context, item) { p -> downloading = downloading + (item.name to p) }
             }
             downloading = downloading - item.name
             Toast.makeText(context, if (res != null) "已下载到：$res" else "下载失败，请稍后再试", Toast.LENGTH_LONG).show()
@@ -937,8 +952,12 @@ private fun FilesPage() {
                 Spacer(Modifier.height(6.dp))
                 Text("下载后端上传的文件（功能 / 美化）", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            androidx.compose.material3.TextButton(onClick = { loadAll() }) { Text("刷新") }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                androidx.compose.material3.TextButton(onClick = { pickZip.launch(arrayOf("application/zip", "application/x-zip-compressed", "*/*")) }) { Text("导入zip") }
+                androidx.compose.material3.TextButton(onClick = { loadAll() }) { Text("刷新") }
+            }
         }
+        Text("下载 → 手机「下载/小染注入」；导入zip → 解压到「小染注入」文件夹（同名自动替换）", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
         Spacer(Modifier.height(16.dp))
 
         if (loading && funcFiles.isEmpty() && beautyFiles.isEmpty()) {
@@ -1186,7 +1205,7 @@ private fun SettingsPage(
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(16.dp))
                         .clickable {
-                            Toast.makeText(context, "MikasaUI v6.4 · 雷电法军 AI", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "MikasaUI v6.4 · 小染 AI", Toast.LENGTH_SHORT).show()
                         },
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween

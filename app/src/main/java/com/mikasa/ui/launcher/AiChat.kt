@@ -52,8 +52,8 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 /**
- * 小米 AI 助手「雷电法军」
- * - 接入小米 MiMo 大模型 API（OpenAI 兼容格式，模型 mimo-v2.5）
+ * 小染 AI 助手（小染助手）
+ * - 接入小染大模型 API（OpenAI 兼容格式）
  * - 上下文限制 188 字（超出自动裁剪最早消息）
  */
 object XiaoMiAi {
@@ -63,11 +63,11 @@ object XiaoMiAi {
 
     // 助手人设
     private val SYSTEM_PROMPT =
-        "你是雷电法军，MikasaUI 的 AI 助手，说话简洁有趣，用中文回复，喜欢用'喵'结尾。"
+        "你是小染，MikasaUI 的 AI 助手，说话简洁有趣，用中文回复。"
 
     data class Msg(val role: String, val content: String)
 
-    /** 调小米 MiMo API（阻塞，需在协程中调用） */
+    /** 调小染 AI API（阻塞，需在协程中调用） */
     fun chat(messages: List<Msg>): String {
         val payload = JSONObject().apply {
             put("model", MODEL)
@@ -125,7 +125,7 @@ object XiaoMiAi {
 
     /** 从 prefs 反序列化 */
     fun load(raw: String?): List<Msg> {
-        if (raw.isNullOrBlank()) return listOf(Msg("assistant", "我是雷电法军⚡ 小米 AI 已就位，有什么想问的？"))
+        if (raw.isNullOrBlank()) return listOf(Msg("assistant", "我是小染助手，小染 AI 已就位，有什么不懂的问题来问我吧～"))
         return try {
             val arr = JSONArray(raw)
             (0 until arr.length()).map { i ->
@@ -133,7 +133,7 @@ object XiaoMiAi {
                 Msg(o.optString("r"), o.optString("c"))
             }
         } catch (e: Exception) {
-            listOf(Msg("assistant", "我是雷电法军⚡ 小米 AI 已就位，有什么想问的？"))
+            listOf(Msg("assistant", "我是小染助手，小染 AI 已就位，有什么不懂的问题来问我吧～"))
         }
     }
 }
@@ -172,9 +172,9 @@ fun AiChatPage(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text("AI 助手", fontSize = 28.sp, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.onBackground)
+                Text("小染助手", fontSize = 28.sp, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.onBackground)
                 Spacer(Modifier.height(4.dp))
-                Text("雷电法军 · 小米 MiMo · 上下文 188 字", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("小染助手 · 小染 AI · 上下文 188 字", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             // 手动清空按钮
             Text(
@@ -211,7 +211,7 @@ fun AiChatPage(
                             color = MaterialTheme.colorScheme.primary
                         )
                         Spacer(Modifier.width(8.dp))
-                        Text("雷电法军思考中…", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("小染思考中…", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
@@ -230,7 +230,7 @@ fun AiChatPage(
                 modifier = Modifier
                     .weight(1f)
                     .clip(RoundedCornerShape(22.dp)),
-                placeholder = { Text("问雷电法军点什么…", fontSize = 14.sp) },
+                placeholder = { Text("问小染点什么…", fontSize = 14.sp) },
                 singleLine = true,
                 colors = TextFieldDefaults.colors(
                     focusedContainerColor = Color.White,
