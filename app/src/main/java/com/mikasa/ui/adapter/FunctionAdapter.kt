@@ -6,6 +6,7 @@ import android.view.ViewGroup
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.RadioButton
+import android.widget.SeekBar
 import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
@@ -38,6 +39,7 @@ class FunctionAdapter(
         const val TYPE_BUTTON = 5
         const val TYPE_HEADER = 6
         const val TYPE_RADIO = 7
+        const val TYPE_SLIDER = 8
     }
 
     /** 开关切换回调（名字, 是否开启） */
@@ -52,6 +54,9 @@ class FunctionAdapter(
     /** 单选回调（分组, 项名）：同 group 内互斥，由调用方持有选中态并重建 */
     var onRadio: ((String, String) -> Unit)? = null
 
+    /** 滑杆回调（名字, 当前值） */
+    var onSlider: ((String, Int) -> Unit)? = null
+
     // 原始完整数据（用于过滤后恢复）
     private var allItems: List<FunctionItem> = emptyList()
 
@@ -61,7 +66,9 @@ class FunctionAdapter(
         val type: Int = TYPE_ITEM,
         var expanded: Boolean = false,
         val group: String? = null,
-        val subtitle: String = ""
+        val subtitle: String = "",
+        val sliderValue: Int = 0,
+        val sliderMax: Int = 100
     )
 
     inner class ViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
@@ -74,6 +81,7 @@ class FunctionAdapter(
         val action: Button? = itemView.findViewById(R.id.btn_action)
         val radio: RadioButton? = itemView.findViewById(R.id.rb_select)
         val sub: TextView? = itemView.findViewById(R.id.tv_function_sub)
+        val slider: SeekBar? = itemView.findViewById(R.id.sb_value)
     }
 
     override fun getItemViewType(position: Int): Int = items[position].type
@@ -86,6 +94,7 @@ class FunctionAdapter(
             TYPE_BUTTON -> R.layout.item_function_button
             TYPE_HEADER -> R.layout.item_function_header
             TYPE_RADIO -> R.layout.item_function_radio
+            TYPE_SLIDER -> R.layout.item_function_slider
             else -> R.layout.item_function
         }
         val view = LayoutInflater.from(parent.context)
@@ -103,6 +112,7 @@ class FunctionAdapter(
             TYPE_BUTTON -> bindButton(holder, item)
             TYPE_HEADER -> bindHeader(holder, item)
             TYPE_RADIO -> bindRadio(holder, item)
+            TYPE_SLIDER -> bindSlider(holder, item)
             else -> bindItem(holder, item)
         }
     }
@@ -193,6 +203,25 @@ class FunctionAdapter(
         holder.itemView.setOnClickListener {
             onRadio?.invoke(item.group ?: "", item.name)
         }
+    }
+
+    /** 滑杆行：可调数值（大小等），实时回调 */
+    private fun bindSlider(holder: ViewHolder, item: FunctionItem) {
+        holder.name?.text = "${item.name}: ${item.sliderValue}/${item.sliderMax}"
+        val sb = holder.slider ?: return
+        sb.max = item.sliderMax
+        sb.progress = item.sliderValue.coerceIn(0, item.sliderMax)
+        sb.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                if (fromUser) {
+                    item.sliderValue = progress
+                    holder.name?.text = "${item.name}: $progress/${item.sliderMax}"
+                    onSlider?.invoke(item.name, progress)
+                }
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+        })
     }
 
     private fun dp(holder: ViewHolder, value: Int): Int {
