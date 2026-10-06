@@ -8,6 +8,37 @@ object FilesApi {
 
     data class FileItem(val name: String, val zone: String, val size: String, val storagePath: String)
 
+    /** 后端设置（导入路径等）。失败返回空默认。 */
+    data class Settings(
+        val softwareEnabled: Boolean,
+        val importPathDefault: String,
+        val importPathPak: String,
+        val unbindLimit: Int
+    )
+
+    /** 取后端设置（默认/pak 导入路径等）。 */
+    fun settings(): Settings {
+        val empty = Settings(false, "", "", 3)
+        return try {
+            val conn = java.net.URL(base + "/api/settings").openConnection() as java.net.HttpURLConnection
+            conn.connectTimeout = 6000
+            conn.readTimeout = 8000
+            val code = conn.responseCode
+            val body = if (code in 200..299) conn.inputStream.bufferedReader().readText() else ""
+            conn.disconnect()
+            if (code !in 200..299) return empty
+            val o = org.json.JSONObject(body)
+            Settings(
+                o.optBoolean("softwareEnabled", false),
+                o.optString("importPathDefault", ""),
+                o.optString("importPathPak", ""),
+                o.optInt("unbindLimit", 3)
+            )
+        } catch (e: Exception) {
+            empty
+        }
+    }
+
     fun url(item: FileItem) = base + "/uploads/" + java.net.URLEncoder.encode(item.storagePath, "UTF-8")
 
     /** 取某分区文件列表（zone=功能/美化）；失败返回空。 */
@@ -124,6 +155,27 @@ object FilesApi {
             }
         }
         return count
+    }
+
+    /** 注入：下载选中文件到缓存，再按「解压 zip / 单文件」写入 targetDir（同名覆盖）。返回写入文件数；下载失败返回 -1。 */
+    fun inject(context: android.content.Context, item: FileItem, targetDir: java.io.File): Int {
+        val cache = java.io.File(context.cacheDir, "inject_tmp").apply { mkdirs() }
+        val local = download(item, cache) ?: return -1
+        val f = java.io.File(local)
+        return try {
+            if (f.name.endsWith(".zip", ignoreCase = true)) {
+                importZip(f, targetDir)
+            } else {
+                if (!targetDir.exists()) targetDir.mkdirs()
+                f.copyTo(java.io.File(targetDir, f.name), overwrite = true)
+                1
+            }
+        } catch (e: Exception) {
+            -1
+        } finally {
+            f.delete()
+            java.io.File(cache, item.name + ".part").delete()
+        }
     }
 
 }
