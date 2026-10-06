@@ -615,7 +615,12 @@ class FloatingWindowService : Service() {
 
         override fun onBindViewHolder(holder: PageHolder, position: Int) {
             val rv = holder.recycler
-            rv.layoutManager = GridLayoutManager(this@FloatingWindowService, 2)
+            // 纯文字信息页（首页卡密页）用单列布局，公告/卡密/设备依次叠放
+            val isTextPage = pages[position].any { it.type == FunctionAdapter.TYPE_TEXT }
+            rv.layoutManager = if (isTextPage)
+                LinearLayoutManager(this@FloatingWindowService)
+            else
+                GridLayoutManager(this@FloatingWindowService, 2)
             while (adapters.size <= position) adapters.add(FunctionAdapter())
             val adapter = adapters[position]
             adapter.setItems(pages[position])
@@ -787,13 +792,18 @@ class FloatingWindowService : Service() {
     /** 卡密门：首页功能项 */
     private fun cardGateItems(): List<FunctionAdapter.FunctionItem> {
         if (!cardVerified) return emptyList()
-        val items = mutableListOf(
-            FunctionAdapter.FunctionItem("卡密：${cardInfo}"),
-            FunctionAdapter.FunctionItem("设备：$deviceName"),
-            FunctionAdapter.FunctionItem("公告")
-        )
-        if (cardAnnouncements.isEmpty()) items.add(FunctionAdapter.FunctionItem("暂无公告"))
-        else cardAnnouncements.forEach { items.add(FunctionAdapter.FunctionItem(it)) }
+        val t = FunctionAdapter.TYPE_TEXT
+        val items = mutableListOf<FunctionAdapter.FunctionItem>()
+        // 公告在上
+        items.add(FunctionAdapter.FunctionItem("公告", type = t))
+        if (cardAnnouncements.isEmpty()) {
+            items.add(FunctionAdapter.FunctionItem("暂无公告", type = t))
+        } else {
+            cardAnnouncements.forEach { items.add(FunctionAdapter.FunctionItem(it, type = t)) }
+        }
+        // 卡密与设备信息在公告下方
+        items.add(FunctionAdapter.FunctionItem("卡密：$cardInfo", type = t))
+        items.add(FunctionAdapter.FunctionItem("设备：$deviceName", type = t))
         return items
     }
 
