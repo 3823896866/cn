@@ -3,7 +3,9 @@ package com.mikasa.ui.adapter
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.Button
 import android.widget.CheckBox
+import android.widget.RadioButton
 import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
@@ -11,7 +13,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.mikasa.R
 
 /**
- * 功能列表适配器（支持搜索过滤 + 折叠组 + 按钮开关）
+ * 功能列表适配器（支持搜索过滤 + 折叠组 + 按钮开关 + 纯文字 + 单选）
  *
  * 条目类型：
  * - TYPE_ITEM        普通功能行（名称 + 勾选框）
@@ -19,6 +21,9 @@ import com.mikasa.R
  * - TYPE_GROUP_CHILD 折叠组子项（缩进显示 + 勾选框）
  * - TYPE_SWITCH      按钮开关（名称 + 开关，点击切换开/关）
  * - TYPE_TEXT        纯文字行（公告/卡密/设备等信息，无勾选控件）
+ * - TYPE_BUTTON      整行主按钮（注入等，点击触发 onButtonClick）
+ * - TYPE_HEADER      分节标题（大号粗体文字）
+ * - TYPE_RADIO       单选项（名称 + 副标题 + 圆点；同 group 内互斥，点击触发 onRadio）
  */
 class FunctionAdapter(
     private val items: MutableList<FunctionItem> = mutableListOf()
@@ -30,6 +35,9 @@ class FunctionAdapter(
         const val TYPE_GROUP_CHILD = 2
         const val TYPE_SWITCH = 3
         const val TYPE_TEXT = 4
+        const val TYPE_BUTTON = 5
+        const val TYPE_HEADER = 6
+        const val TYPE_RADIO = 7
     }
 
     /** 开关切换回调（名字, 是否开启） */
@@ -38,6 +46,12 @@ class FunctionAdapter(
     /** 勾选回调（名字, 是否勾选） */
     var onCheck: ((String, Boolean) -> Unit)? = null
 
+    /** 主按钮点击回调（按钮名） */
+    var onButtonClick: ((String) -> Unit)? = null
+
+    /** 单选回调（分组, 项名）：同 group 内互斥，由调用方持有选中态并重建 */
+    var onRadio: ((String, String) -> Unit)? = null
+
     // 原始完整数据（用于过滤后恢复）
     private var allItems: List<FunctionItem> = emptyList()
 
@@ -45,7 +59,9 @@ class FunctionAdapter(
         val name: String,
         var isChecked: Boolean = false,
         val type: Int = TYPE_ITEM,
-        var expanded: Boolean = false
+        var expanded: Boolean = false,
+        val group: String? = null,
+        val subtitle: String = ""
     )
 
     inner class ViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
@@ -55,6 +71,9 @@ class FunctionAdapter(
         val groupArrow: TextView? = itemView.findViewById(R.id.tv_group_arrow)
         val switchName: TextView? = itemView.findViewById(R.id.tv_switch_name)
         val switchButton: Switch? = itemView.findViewById(R.id.switch_button)
+        val action: Button? = itemView.findViewById(R.id.btn_action)
+        val radio: RadioButton? = itemView.findViewById(R.id.rb_select)
+        val sub: TextView? = itemView.findViewById(R.id.tv_function_sub)
     }
 
     override fun getItemViewType(position: Int): Int = items[position].type
@@ -64,6 +83,9 @@ class FunctionAdapter(
             TYPE_GROUP -> R.layout.item_function_group
             TYPE_SWITCH -> R.layout.item_function_switch
             TYPE_TEXT -> R.layout.item_function_text
+            TYPE_BUTTON -> R.layout.item_function_button
+            TYPE_HEADER -> R.layout.item_function_header
+            TYPE_RADIO -> R.layout.item_function_radio
             else -> R.layout.item_function
         }
         val view = LayoutInflater.from(parent.context)
@@ -78,6 +100,9 @@ class FunctionAdapter(
             TYPE_GROUP_CHILD -> bindChild(holder, item)
             TYPE_SWITCH -> bindSwitch(holder, item)
             TYPE_TEXT -> bindText(holder, item)
+            TYPE_BUTTON -> bindButton(holder, item)
+            TYPE_HEADER -> bindHeader(holder, item)
+            TYPE_RADIO -> bindRadio(holder, item)
             else -> bindItem(holder, item)
         }
     }
@@ -94,11 +119,6 @@ class FunctionAdapter(
         holder.itemView.setOnClickListener {
             holder.checkBox?.isChecked = !(holder.checkBox?.isChecked ?: false)
         }
-    }
-
-    /** 纯文字行（无勾选控件，用于公告/卡密/设备信息展示） */
-    private fun bindText(holder: ViewHolder, item: FunctionItem) {
-        holder.name?.text = item.name
     }
 
     /** 折叠组标题 */
@@ -142,6 +162,36 @@ class FunctionAdapter(
         holder.itemView.setOnClickListener {
             val new = !(holder.switchButton?.isChecked ?: false)
             holder.switchButton?.isChecked = new
+        }
+    }
+
+    /** 纯文字行（无勾选控件，用于公告/卡密/设备信息展示） */
+    private fun bindText(holder: ViewHolder, item: FunctionItem) {
+        holder.name?.text = item.name
+    }
+
+    /** 整行主按钮（注入等） */
+    private fun bindButton(holder: ViewHolder, item: FunctionItem) {
+        holder.action?.text = item.name
+        holder.itemView.setOnClickListener { onButtonClick?.invoke(item.name) }
+    }
+
+    /** 分节标题 */
+    private fun bindHeader(holder: ViewHolder, item: FunctionItem) {
+        holder.name?.text = item.name
+    }
+
+    /** 单选项（同 group 内互斥，选中态由调用方维护） */
+    private fun bindRadio(holder: ViewHolder, item: FunctionItem) {
+        holder.name?.text = item.name
+        val sub = holder.sub
+        if (sub != null) {
+            if (item.subtitle.isBlank()) { sub.visibility = View.GONE }
+            else { sub.visibility = View.VISIBLE; sub.text = item.subtitle }
+        }
+        holder.radio?.isChecked = item.isChecked
+        holder.itemView.setOnClickListener {
+            onRadio?.invoke(item.group ?: "", item.name)
         }
     }
 
