@@ -128,9 +128,17 @@ fun MainScreen() {
     // 悬浮窗运行状态（真实检测）
     var svcRunning by remember { mutableStateOf(isFloatingServiceRunning(context)) }
 
-    // ── AI 聊天状态（提升到此处：滑动页面不丢失；持久化：退出 App 仍在） ──
+    // ── AI 聊天状态（持久化：退出 App 仍在；消息保留） ──
     var aiMessages by remember { mutableStateOf(XiaoMiAi.load(prefs.getString("ai_chat", null))) }
     var aiLoading by remember { mutableStateOf(false) }
+    // 稳定会话 id + 转人工计时 + 已接收的 agent 回复数
+    val csSession = remember {
+        var id = prefs.getString("cs_session", null)
+        if (id == null) { id = "dev_" + System.currentTimeMillis(); prefs.edit().putString("cs_session", id).apply() }
+        id
+    }
+    var csHumanSince by remember { mutableStateOf(prefs.getLong("cs_human_since", 0L)) }
+    var csIngested by remember { mutableIntStateOf(prefs.getInt("cs_ingested_agent", 0)) }
 
     fun persistChat(list: List<XiaoMiAi.Msg>) {
         prefs.edit().putString("ai_chat", XiaoMiAi.save(list)).apply()
@@ -142,10 +150,26 @@ fun MainScreen() {
         aiMessages = updated
         persistChat(updated)
         aiLoading = true
+        val now = System.currentTimeMillis()
+        // 转人工后 10 分钟内：不再真正发送，只提示等待客服
+        if (csHumanSince > 0 && now - csHumanSince < 10L * 60 * 1000) {
+            aiMessages = updated + XiaoMiAi.Msg("assistant", "等待客服回复中…（人工客服接管中，请稍候）")
+            persistChat(aiMessages)
+            aiLoading = false
+            return
+        }
+        if (csHumanSince > 0 && now - csHumanSince >= 10L * 60 * 1000) {
+            csHumanSince = 0
+            prefs.edit().putLong("cs_human_since", 0).apply()
+        }
         scope.launch {
             val ck = prefs.getString("card_key", "") ?: ""
-            val reply = withContext(Dispatchers.IO) {
-                com.mikasa.ui.XiaoRanApi.csSend(ck, "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}", text, "", "xiaoran_chat") ?: XiaoMiAi.chat(updated)
+            val dev = "${Build.MANUFACTURER} ${Build.MODEL}"
+            val res = withContext(Dispatchers.IO) { com.mikasa.ui.XiaoRanApi.csSend(ck, dev, text, "", csSession) }
+            val reply = res?.reply ?: withContext(Dispatchers.IO) { XiaoMiAi.chat(updated) }
+            if (res?.status == "human") {
+                csHumanSince = now
+                prefs.edit().putLong("cs_human_since", now).apply()
             }
             val next = XiaoMiAi.trimContext(updated + XiaoMiAi.Msg("assistant", reply))
             aiMessages = next
@@ -156,7 +180,24 @@ fun MainScreen() {
 
     fun clearAiChat() {
         aiMessages = listOf(XiaoMiAi.Msg("assistant", "我是小染助手，聊天已清空，随时找我喵~"))
-        prefs.edit().remove("ai_chat").apply()
+        csIngested = 0
+        prefs.edit().remove("ai_chat").putInt("cs_ingested_agent", 0).apply()
+    }
+
+    // 轮询接收后端人工(agent)回复（修复"后端发的消息前端收不到"）
+    LaunchedEffect(csSession) {
+        while (true) {
+            delay(8000)
+            val agent = withContext(Dispatchers.IO) { com.mikasa.ui.XiaoRanApi.agentReplies(csSession) }
+            if (agent.size < csIngested) csIngested = 0
+            if (agent.size > csIngested) {
+                val fresh = agent.subList(csIngested, agent.size)
+                aiMessages = aiMessages + fresh.map { XiaoMiAi.Msg("assistant", it) }
+                persistChat(aiMessages)
+                csIngested = agent.size
+                prefs.edit().putInt("cs_ingested_agent", agent.size).apply()
+            }
+        }
     }
 
     // ── 自定义背景图片（软件模糊 + 遮罩，低版本也有效） ──
@@ -686,7 +727,10 @@ private fun copyUriToFile(context: Context, uri: Uri): String? {
 @Composable
 private fun PermissionsPage() {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var showShizuku by remember { mutableStateOf(false) }
+    var rootOk by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { rootOk = withContext(Dispatchers.IO) { rootAvailable() } }
 
     Column(
         modifier = Modifier
@@ -772,8 +816,23 @@ private fun PermissionsPage() {
 
         EnterAnimation(320) {
             PermissionCard(
+                title = "Root 权限",
+                desc = "检测系统 Root（Magisk/su）；没有 Root 也可用 无障碍 + Shizuku(无线调试) 获得等效能力",
+                granted = rootOk,
+                onClick = {
+                    scope.launch {
+                        rootOk = withContext(Dispatchers.IO) { rootAvailable() }
+                        Toast.makeText(context, if (rootOk) "Root 已可用 ✅" else "未检测到 Root（可用 Magisk 获取）", Toast.LENGTH_LONG).show()
+                    }
+                }
+            )
+            Spacer(Modifier.height(20.dp))
+        }
+
+        EnterAnimation(360) {
+            PermissionCard(
                 title = "Shizuku 权限",
-                desc = "安装 Shizuku 后，可在下方弹窗内完成授权，不跳转系统设置页",
+                desc = "Shizuku 经无线调试/ADB 启动时 App 内检测不到属正常；下方弹窗可检测 ADB 通道并授权",
                 granted = false,
                 onClick = { showShizuku = true }
             )
@@ -869,15 +928,38 @@ private fun hasNotificationPermission(context: Context): Boolean {
     }
 }
 
-private fun shizukuStatusText(context: Context): String = try {
-    val cls = Class.forName("dev.rikka.shizuku.Shizuku")
-    val prepared = cls.getMethod("isPrepared").invoke(null) as Boolean
-    val granted = cls.getMethod("isPermissionGranted", Int::class.java).invoke(null, 0) as Boolean
-    if (!prepared) "未检测到已就绪的 Shizuku（请先安装并启动 Shizuku App）"
-    else if (granted) "Shizuku 已授权 ✅"
-    else "Shizuku 已就绪，但尚未授权本应用"
-} catch (e: Throwable) {
-    "未安装 Shizuku 框架（无 dev.rikka.shizuku.Shizuku）"
+/** 检测系统 Root（Magisk/su）：能执行 su -c id 且返回 uid=0。 */
+private fun rootAvailable(): Boolean {
+    for (cmd in listOf("su", "/system/xbin/su", "/sbin/su", "/system/bin/su", "/system/xbin/magisk")) {
+        try {
+            val p = ProcessBuilder(cmd, "-c", "id").redirectErrorStream(true).start()
+            val out = p.inputStream.bufferedReader().readText()
+            if (p.waitFor() == 0 && out.contains("uid=0")) return true
+        } catch (e: Exception) {
+        }
+    }
+    return false
+}
+
+/** Shizuku 是否经 ADB/无线调试运行（本地 9555 端口可连）。 */
+private fun shizukuAdbRunning(): Boolean = try {
+    java.net.Socket().apply { soTimeout = 1500 }.use { it.connect(java.net.InetSocketAddress("127.0.0.1", 9555)); true }
+} catch (e: Exception) {
+    false
+}
+
+private fun shizukuStatusText(context: Context): String {
+    if (shizukuAdbRunning()) return "Shizuku（无线调试/ADB）已运行 ✅（App 内授权检测不到属正常）"
+    return try {
+        val cls = Class.forName("dev.rikka.shizuku.Shizuku")
+        val prepared = cls.getMethod("isPrepared").invoke(null) as Boolean
+        val granted = cls.getMethod("isPermissionGranted", Int::class.java).invoke(null, 0) as Boolean
+        if (!prepared) "未检测到已就绪的 Shizuku（可安装 Shizuku App 并用无线调试启动）"
+        else if (granted) "Shizuku 已授权 ✅"
+        else "Shizuku 已就绪，但尚未授权本应用"
+    } catch (e: Throwable) {
+        "未安装 Shizuku 框架（无 dev.rikka.shizuku.Shizuku）"
+    }
 }
 
 private fun grantShizuku(context: Context): Boolean = try {
