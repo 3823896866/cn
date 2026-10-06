@@ -23,6 +23,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
@@ -217,6 +219,8 @@ fun MainScreen() {
     // ── 自定义背景图片（软件模糊 + 遮罩，低版本也有效） ──
     var bgImagePath by remember { mutableStateOf(prefs.getString("bg_image", null)) }
     val bgBitmap = remember(bgImagePath) { bgImagePath?.let { decodeBlurBackground(it) } }
+    // 视频背景（assets/home_bg.mp4，循环、无控件）
+    var videoBg by remember { mutableStateOf(prefs.getBoolean("video_bg", false)) }
     // 通用图片选择器（GetContent 兼容所有安卓版本，直接打开系统图库/文件，无需权限）
     val pickBg = rememberLauncherForActivityResult(
         ActivityResultContracts.GetContent()
@@ -267,8 +271,15 @@ fun MainScreen() {
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            // 背景层：自定义图片（软件模糊+遮罩）或默认渐变光斑
-            if (bgBitmap != null) {
+            // 背景层：视频背景 > 自定义图片（软件模糊+遮罩）> 默认渐变光斑
+            if (videoBg) {
+                VideoBackground()
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .background(Color(0x1A000000))
+                )
+            } else if (bgBitmap != null) {
                 Image(
                     bitmap = bgBitmap,
                     contentDescription = null,
@@ -346,6 +357,12 @@ fun MainScreen() {
                                 prefs.edit().remove("bg_image").apply()
                                 bgImagePath = null
                                 Toast.makeText(context, "已恢复默认背景", Toast.LENGTH_SHORT).show()
+                            },
+                            videoBg = videoBg,
+                            onVideoBgToggle = {
+                                videoBg = it
+                                prefs.edit().putBoolean("video_bg", it).apply()
+                                Toast.makeText(context, if (it) "已切换为视频背景（循环播放）" else "已关闭视频背景", Toast.LENGTH_SHORT).show()
                             },
                             diEnabled = diEnabled,
                             onDiToggle = {
@@ -1036,7 +1053,7 @@ private fun FilesPage() {
                 com.mikasa.ui.FilesApi.downloadToPublic(context, item) { p -> downloading = downloading + (item.name to p) }
             }
             downloading = downloading - item.name
-            Toast.makeText(context, if (res != null) "已下载到：$res" else "下载失败，请稍后再试", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, if (res != null) "下载成功" else "下载失败，请稍后再试", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -1062,7 +1079,7 @@ private fun FilesPage() {
                 androidx.compose.material3.TextButton(onClick = { loadAll() }) { Text("刷新") }
             }
         }
-        Text("下载 → 手机「下载/小染注入」；导入zip → 解压到「小染注入」文件夹（同名自动替换）", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
+        Text("点击下载即保存到手机；导入 zip 自动解压、同名文件自动替换", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
         Spacer(Modifier.height(16.dp))
 
         if (loading && funcFiles.isEmpty() && beautyFiles.isEmpty()) {
@@ -1127,6 +1144,8 @@ private fun SettingsPage(
     bgImagePath: String?,
     onPickBg: () -> Unit,
     onResetBg: () -> Unit,
+    videoBg: Boolean,
+    onVideoBgToggle: (Boolean) -> Unit,
     diEnabled: Boolean,
     onDiToggle: (Boolean) -> Unit,
     animSmooth: Int,
@@ -1245,6 +1264,16 @@ private fun SettingsPage(
                     }
                 }
             }
+        }
+        Spacer(Modifier.height(22.dp))
+        // ── 视频背景（循环播放 assets/home_bg.mp4，无控件） ──
+        AppCard(modifier = Modifier.fillMaxWidth()) {
+            ToggleRow(
+                title = "视频背景",
+                on = videoBg,
+                valueText = "home_bg.mp4 · 循环",
+                onToggle = { onVideoBgToggle(!videoBg) }
+            )
         }
         Spacer(Modifier.height(22.dp))
         // ── 背景模糊程度（拖动条实时生效） ──
@@ -1393,6 +1422,31 @@ private fun AnimChip(
             fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
             color = MaterialTheme.colorScheme.onSurface
         )
+    }
+}
+
+/** 视频背景：循环播放 assets/home_bg.mp4，无播放控件 */
+@Composable
+private fun VideoBackground() {
+    var mp by remember { mutableStateOf<android.media.MediaPlayer?>(null) }
+    AndroidView(
+        factory = { ctx ->
+            val sv = android.view.SurfaceView(ctx)
+            val player = android.media.MediaPlayer()
+            ctx.assets.openFd("home_bg.mp4").use { fd ->
+                player.setDataSource(fd.fileDescriptor, fd.startOffset, fd.length)
+            }
+            player.setDisplay(sv.holder)
+            player.isLooping = true
+            player.setOnPreparedListener { it.start() }
+            player.prepareAsync()
+            mp = player
+            sv
+        },
+        modifier = Modifier.fillMaxSize()
+    )
+    DisposableEffect(Unit) {
+        onDispose { runCatching { mp?.release() }; mp = null }
     }
 }
 
