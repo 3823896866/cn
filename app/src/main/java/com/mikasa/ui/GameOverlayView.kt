@@ -1,0 +1,87 @@
+package com.mikasa.ui
+
+import android.content.Context
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.view.View
+
+/**
+ * 游戏辅助覆盖层：在同一透明悬浮层上画「辅助圆圈(红圈)」与「准心十字架(和平精英风格)」。
+ * 圆圈大小 0-100，准心可切换类型(0圆+十字/1纯十字/2菱形)与颜色。
+ */
+class GameOverlayView(context: Context) : View(context) {
+    var circleEnabled = false
+    var circleSize = 40           // 0..100
+    var crossEnabled = false
+    var crossType = 0            // 0=圆环+十字, 1=纯十字, 2=菱形
+    var crossColor = Color.RED
+
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        color = Color.RED
+        strokeWidth = 6f
+    }
+    private fun px(v: Float): Int = (v * resources.displayMetrics.density).toInt()
+
+    fun setCircle(enabled: Boolean, size0to100: Int) {
+        circleEnabled = enabled
+        circleSize = size0to100.coerceIn(0, 100)
+        invalidate()
+    }
+
+    fun setCross(enabled: Boolean, type: Int, color: Int) {
+        crossEnabled = enabled
+        crossType = type
+        crossColor = color
+        invalidate()
+    }
+
+    fun clearColor() {
+        paint.color = Color.RED
+        invalidate()
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
+        val cx = width / 2f
+        val cy = height / 2f
+        // 辅助圆圈（红圈）
+        if (circleEnabled && circleSize > 0) {
+            val r = px(20f + circleSize * 1.2f)   // 20..140 dp 随大小伸缩
+            paint.color = Color.RED
+            paint.strokeWidth = px(3f).toFloat()
+            canvas.drawCircle(cx, cy, r, paint)
+        }
+        // 准心十字架（和平精英风格）
+        if (crossEnabled) {
+            paint.color = crossColor
+            paint.strokeWidth = px(2.5f).toFloat()
+            val arm = px(28f + circleSize * 0.2f)
+            val gap = px(6f)
+            when (crossType) {
+                0 -> { // 圆环 + 十字
+                    canvas.drawCircle(cx, cy, px(22f), paint)
+                    drawCross(canvas, cx, cy, arm, gap)
+                }
+                1 -> drawCross(canvas, cx, cy, arm, gap)          // 纯十字
+                2 -> { // 菱形准星
+                    val d = px(20f)
+                    val p1 = android.graphics.Path()
+                    p1.moveTo(cx, cy - d); p1.lineTo(cx + d, cy)
+                    p1.lineTo(cx, cy + d); p1.lineTo(cx - d, cy); p1.close()
+                    canvas.drawPath(p1, paint)
+                    drawCross(canvas, cx, cy, arm, gap)
+                }
+                else -> drawCross(canvas, cx, cy, arm, gap)
+            }
+        }
+    }
+
+    private fun drawCross(canvas: Canvas, cx: Float, cy: Float, arm: Float, gap: Float) {
+        canvas.drawLine(cx - arm, cy, cx - gap, cy, paint)
+        canvas.drawLine(cx + gap, cy, cx + arm, cy, paint)
+        canvas.drawLine(cx, cy - arm, cx, cy - gap, paint)
+        canvas.drawLine(cx, cy + gap, cx, cy + arm, paint)
+    }
+}
