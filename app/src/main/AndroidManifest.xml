@@ -44,7 +44,7 @@ android:foregroundServiceType="specialUse" />
         <service
             android:name=".VolumeKeyService"
             android:exported="true"
-            android:label="三笠美化·音量键控制"
+            android:label="小染注入·音量键控制"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
             <intent-filter>
                 <action android:name="android.accessibilityservice.AccessibilityService" />
