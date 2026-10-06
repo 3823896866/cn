@@ -139,6 +139,7 @@ fun MainScreen() {
     }
     var csHumanSince by remember { mutableStateOf(prefs.getLong("cs_human_since", 0L)) }
     var csIngested by remember { mutableIntStateOf(prefs.getInt("cs_ingested_agent", 0)) }
+    var csWaitingShown by remember { mutableStateOf(false) }
 
     fun persistChat(list: List<XiaoMiAi.Msg>) {
         prefs.edit().putString("ai_chat", XiaoMiAi.save(list)).apply()
@@ -151,15 +152,19 @@ fun MainScreen() {
         persistChat(updated)
         aiLoading = true
         val now = System.currentTimeMillis()
-        // 转人工后 10 分钟内：不再真正发送，只提示等待客服
+        // 转人工中：不真发；首次提示"等待回复"一次，之后静默等客服在后端回复
         if (csHumanSince > 0 && now - csHumanSince < 10L * 60 * 1000) {
-            aiMessages = updated + XiaoMiAi.Msg("assistant", "等待客服回复中…（人工客服接管中，请稍候）")
-            persistChat(aiMessages)
+            if (!csWaitingShown) {
+                aiMessages = updated + XiaoMiAi.Msg("assistant", "已转人工，正在等待客服回复…")
+                persistChat(aiMessages)
+                csWaitingShown = true
+            }
             aiLoading = false
             return
         }
         if (csHumanSince > 0 && now - csHumanSince >= 10L * 60 * 1000) {
             csHumanSince = 0
+            csWaitingShown = false
             prefs.edit().putLong("cs_human_since", 0).apply()
         }
         scope.launch {
@@ -169,6 +174,7 @@ fun MainScreen() {
             val reply = res?.reply ?: withContext(Dispatchers.IO) { XiaoMiAi.chat(updated) }
             if (res?.status == "human") {
                 csHumanSince = now
+                csWaitingShown = false
                 prefs.edit().putLong("cs_human_since", now).apply()
             }
             val next = XiaoMiAi.trimContext(updated + XiaoMiAi.Msg("assistant", reply))
@@ -188,11 +194,19 @@ fun MainScreen() {
     LaunchedEffect(csSession) {
         while (true) {
             delay(8000)
-            val agent = withContext(Dispatchers.IO) { com.mikasa.ui.XiaoRanApi.agentReplies(csSession) }
+            val agent = withContext(Dispatchers.IO) { com.mikasa.ui.XiaoRanApi.agentMessages(csSession) }
+            val st = withContext(Dispatchers.IO) { com.mikasa.ui.XiaoRanApi.csStatus(csSession) }
+            if (st == "ended" && csHumanSince > 0) {
+                csHumanSince = 0
+                csWaitingShown = false
+                aiMessages = aiMessages + XiaoMiAi.Msg("assistant", "客服已结束服务，恢复正常对话～")
+                persistChat(aiMessages)
+                prefs.edit().putLong("cs_human_since", 0).apply()
+            }
             if (agent.size < csIngested) csIngested = 0
             if (agent.size > csIngested) {
                 val fresh = agent.subList(csIngested, agent.size)
-                aiMessages = aiMessages + fresh.map { XiaoMiAi.Msg("assistant", it) }
+                aiMessages = aiMessages + fresh.map { XiaoMiAi.Msg("assistant", it.text, it.image) }
                 persistChat(aiMessages)
                 csIngested = agent.size
                 prefs.edit().putInt("cs_ingested_agent", agent.size).apply()
@@ -224,6 +238,10 @@ fun MainScreen() {
         prefs.edit().putString("active_date", today).putInt("today_activations", 0).apply()
     }
     var todayActivations by remember { mutableIntStateOf(prefs.getInt("today_activations", 0)) }
+
+    // ── 使用人数（后端：当前有效卡密数，卡密到期自动减少） ──
+    var userCount by remember { mutableIntStateOf(0) }
+    scope.launch { userCount = withContext(Dispatchers.IO) { com.mikasa.ui.XiaoRanApi.activeUsers() } }
 
     // ── 真实网络延迟（ms） ──
     var latency by remember { mutableStateOf("测量中…") }
@@ -289,6 +307,7 @@ fun MainScreen() {
                         0 -> HomePage(
                             svcRunning = svcRunning,
                             moduleCount = totalModuleCount,
+                            userCount = userCount,
                             todayActivations = todayActivations,
                             latency = latency,
                             onLaunch = {
@@ -486,6 +505,7 @@ private fun EnterAnimation(delayMs: Int = 0, content: @Composable () -> Unit) {
 private fun HomePage(
     svcRunning: Boolean,
     moduleCount: Int,
+    userCount: Int,
     todayActivations: Int,
     latency: String,
     onLaunch: () -> Unit,
@@ -499,7 +519,7 @@ private fun HomePage(
             .padding(horizontal = 20.dp, vertical = 20.dp)
     ) {
         EnterAnimation(0) {
-            Text("Mikasa", fontSize = 34.sp, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.onBackground)
+            Text("小染自动注入", fontSize = 30.sp, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.onBackground)
             Text("悬浮窗控制台", fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(20.dp))
         }
@@ -517,9 +537,9 @@ private fun HomePage(
                 ) {
                     AppCard(modifier = Modifier.fillMaxWidth().weight(1f)) {
                         Column {
-                            Text("功能模块", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("使用人数", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Spacer(Modifier.height(4.dp))
-                            Text("$moduleCount", fontSize = 26.sp, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.onSurface)
+                            Text("$userCount", fontSize = 26.sp, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.onSurface)
                         }
                     }
                     AppCard(modifier = Modifier.fillMaxWidth().weight(1f)) {
@@ -1117,6 +1137,9 @@ private fun SettingsPage(
     var darkMode by remember { mutableStateOf(prefs.getBoolean("dark_mode", true)) }
     var autoStart by remember { mutableStateOf(prefs.getBoolean("auto_start", false)) }
     var haptic by remember { mutableStateOf(prefs.getBoolean("haptic", true)) }
+    // 版本号对接后端
+    var serverVersion by remember { mutableStateOf("1.0") }
+    LaunchedEffect(Unit) { serverVersion = withContext(Dispatchers.IO) { com.mikasa.ui.XiaoRanApi.serverVersion() } }
 
     fun toggle(key: String, old: Boolean): Boolean {
         val new = !old
@@ -1290,13 +1313,13 @@ private fun SettingsPage(
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(16.dp))
                         .clickable {
-                            Toast.makeText(context, "MikasaUI v6.4 · 小染 AI", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "小染注入 $serverVersion · 小染 AI", Toast.LENGTH_SHORT).show()
                         },
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text("关于 MikasaUI", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
-                    Text("v6.4", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("关于小染", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
+                    Text(serverVersion, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
             Spacer(Modifier.height(28.dp))
