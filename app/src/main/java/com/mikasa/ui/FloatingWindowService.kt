@@ -65,6 +65,11 @@ class FloatingWindowService : Service() {
     companion object {
         private const val NOTIFICATION_ID = 1001
         private const val CHANNEL_ID = "mikasa_float_channel"
+        // 进程级卡密验证状态：关悬浮窗重开仍保持已验证；仅 App 进程被杀后重开才需重验
+        @JvmStatic var processCardVerified = false
+        @JvmStatic var processCardInfo = ""
+        // 录屏授权：透明 Activity 拿到 MediaProjection 后回调给服务
+        @JvmStatic var onProjectionGranted: ((android.media.projection.MediaProjection) -> Unit)? = null
 
         /** 检查悬浮窗权限 */
         fun canDrawOverlays(context: Context): Boolean {
@@ -154,6 +159,10 @@ class FloatingWindowService : Service() {
 
     // 灵动岛（高仿 iOS）
     private var dynamicIsland: DynamicIsland? = null
+
+    // 游戏辅助覆盖层（辅助圆圈 + 准心）
+    private var gameOverlay: GameOverlayView? = null
+    private var gameOverlayParams: WindowManager.LayoutParams? = null
 
     // 防录屏：音量键隐藏/显示 UI
     private var uiHiddenByVolume = false
@@ -298,6 +307,8 @@ class FloatingWindowService : Service() {
         } catch (e: Exception) {
             e.printStackTrace()
         }
+        playStartAudio()
+        ensureGameOverlay()
 
         // 灵动岛（设置里可关闭）
         val diEnabled = getSharedPreferences("mikasa_prefs", MODE_PRIVATE)
@@ -430,9 +441,9 @@ class FloatingWindowService : Service() {
         }
 
         val cp = getSharedPreferences("mikasa_prefs", MODE_PRIVATE)
-        // 不自动登录：每次启动都要重新验证一次；仅记住上次输入的卡密（card_key）用于 prefill
-        cardVerified = false
-        cardInfo = cp.getString("card_info", "") ?: ""
+        // 卡密验证为进程级：关悬浮窗重开仍保持已验证；仅 App 进程被杀后重新打开才需重验
+        cardVerified = processCardVerified
+        cardInfo = processCardInfo.ifBlank { cp.getString("card_info", "") ?: "" }
 
         val inflater = LayoutInflater.from(this)
         floatView = inflater.inflate(R.layout.view_floating_panel, null)
@@ -646,18 +657,39 @@ class FloatingWindowService : Service() {
             adapter.setItems(pages[position])
             // 开关切换 → 自定义消息通知
             adapter.onToggle = { name, checked ->
-                if (name == "录屏") handleRecordToggle(checked)
-                else {
-                    getSharedPreferences("mikasa_prefs", MODE_PRIVATE).edit().putBoolean("toggle_$name", checked).apply()
-                    showFloatToast("${if (checked) "已开启" else "已关闭"} · $name")
+                when (name) {
+                    "录屏" -> handleRecordToggle(checked)
+                    "显示准心" -> { getSharedPreferences("mikasa_prefs", MODE_PRIVATE).edit().putBoolean("cross_enabled", checked).apply(); updateGameOverlay() }
+                    "辅助圆圈开关" -> { getSharedPreferences("mikasa_prefs", MODE_PRIVATE).edit().putBoolean("circle_enabled", checked).apply(); updateGameOverlay() }
+                    else -> {
+                        getSharedPreferences("mikasa_prefs", MODE_PRIVATE).edit().putBoolean("toggle_$name", checked).apply()
+                        showFloatToast("${if (checked) "已开启" else "已关闭"} · $name")
+                    }
                 }
             }
-            adapter.onSlider = { _, value ->
-                getSharedPreferences("mikasa_prefs", MODE_PRIVATE).edit().putInt("circle_size", value).apply()
+            adapter.onSlider = { name, value ->
+                if (name == "辅助圆圈大小") {
+                    getSharedPreferences("mikasa_prefs", MODE_PRIVATE).edit().putInt("circle_size", value).apply()
+                    updateGameOverlay()
+                }
             }
             // 表单页（功能/美化）：注入按钮 + 单选（导入方式/文件）
             adapter.onButtonClick = { name -> if (currentFormZone != null) runInject(name) }
-            adapter.onRadio = { group, name -> if (currentFormZone != null) onFormRadio(group, name) }
+            adapter.onRadio = { group, name ->
+                when (group) {
+                    "crossType" -> {
+                        val i = if (name == "纯十字") 1 else if (name == "菱形") 2 else 0
+                        getSharedPreferences("mikasa_prefs", MODE_PRIVATE).edit().putInt("cross_type", i).apply()
+                        updateGameOverlay(); refreshMiscPage()
+                    }
+                    "crossColor" -> {
+                        val hex = when (name) { "绿色" -> "#FF00E676"; "黄色" -> "#FFFFEB3B"; "蓝色" -> "#FF2196F3"; "白色" -> "#FFFFFFFF"; else -> "#FFFF0000" }
+                        getSharedPreferences("mikasa_prefs", MODE_PRIVATE).edit().putString("cross_color", hex).apply()
+                        updateGameOverlay(); refreshMiscPage()
+                    }
+                    else -> if (currentFormZone != null) onFormRadio(group, name)
+                }
+            }
             // 卡密门：首页未验证 → 显示「输入框+验证按钮」，隐藏功能列表
             val gate = holder.itemView.findViewById<android.view.View>(R.id.card_gate)
             if (position == cardGatePageIndex && !cardVerified) {
@@ -776,23 +808,57 @@ class FloatingWindowService : Service() {
     private fun miscPageItems(): List<FunctionAdapter.FunctionItem> {
         val prefs = getSharedPreferences("mikasa_prefs", MODE_PRIVATE)
         val t = { n: String -> prefs.getBoolean("toggle_$n", false) }
-        return listOf(
-            FunctionAdapter.FunctionItem("杂类", type = FunctionAdapter.TYPE_HEADER),
-            FunctionAdapter.FunctionItem("准心辅助", type = FunctionAdapter.TYPE_GROUP, expanded = true, group = "assist"),
-            FunctionAdapter.FunctionItem("显示准心", type = FunctionAdapter.TYPE_GROUP_CHILD, group = "assist", isChecked = t("显示准心")),
-            FunctionAdapter.FunctionItem("自动锁定", type = FunctionAdapter.TYPE_GROUP_CHILD, group = "assist", isChecked = t("自动锁定")),
-            FunctionAdapter.FunctionItem("吸附对齐", type = FunctionAdapter.TYPE_GROUP_CHILD, group = "assist", isChecked = t("吸附对齐")),
-            FunctionAdapter.FunctionItem("高亮标记", type = FunctionAdapter.TYPE_GROUP_CHILD, group = "assist", isChecked = t("高亮标记")),
-            FunctionAdapter.FunctionItem("穿透辅助", type = FunctionAdapter.TYPE_GROUP_CHILD, group = "assist", isChecked = t("穿透辅助")),
-            FunctionAdapter.FunctionItem("辅助圆圈", type = FunctionAdapter.TYPE_HEADER),
-            FunctionAdapter.FunctionItem("辅助圆圈大小", type = FunctionAdapter.TYPE_SLIDER, sliderValue = prefs.getInt("circle_size", 40), sliderMax = 100),
-            FunctionAdapter.FunctionItem("录屏", type = FunctionAdapter.TYPE_HEADER),
-            FunctionAdapter.FunctionItem("录屏", type = FunctionAdapter.TYPE_SWITCH, group = "record", isChecked = prefs.getBoolean("record_enabled", false))
-        )
+        val H = FunctionAdapter.TYPE_HEADER
+        val G = FunctionAdapter.TYPE_GROUP
+        val C = FunctionAdapter.TYPE_GROUP_CHILD
+        val R = FunctionAdapter.TYPE_RADIO
+        val S = FunctionAdapter.TYPE_SWITCH
+        val crossType = prefs.getInt("cross_type", 0)
+        val crossColor = prefs.getString("cross_color", "#FFFF0000") ?: "#FFFF0000"
+        val list = mutableListOf<FunctionAdapter.FunctionItem>()
+        list.add(FunctionAdapter.FunctionItem("杂类", type = H))
+        list.add(FunctionAdapter.FunctionItem("准心辅助", type = G, expanded = true, group = "assist"))
+        list.add(FunctionAdapter.FunctionItem("显示准心", type = C, group = "assist", isChecked = prefs.getBoolean("cross_enabled", false)))
+        list.add(FunctionAdapter.FunctionItem("自动锁定", type = C, group = "assist", isChecked = t("自动锁定")))
+        list.add(FunctionAdapter.FunctionItem("吸附对齐", type = C, group = "assist", isChecked = t("吸附对齐")))
+        list.add(FunctionAdapter.FunctionItem("高亮标记", type = C, group = "assist", isChecked = t("高亮标记")))
+        list.add(FunctionAdapter.FunctionItem("穿透辅助", type = C, group = "assist", isChecked = t("穿透辅助")))
+        list.add(FunctionAdapter.FunctionItem("准心类型", type = H))
+        listOf("圆环十字" to 0, "纯十字" to 1, "菱形" to 2).forEach { (n, i) ->
+            list.add(FunctionAdapter.FunctionItem(n, type = R, group = "crossType", isChecked = crossType == i))
+        }
+        list.add(FunctionAdapter.FunctionItem("准心颜色", type = H))
+        listOf("红色" to "#FFFF0000", "绿色" to "#FF00E676", "黄色" to "#FFFFEB3B", "蓝色" to "#FF2196F3", "白色" to "#FFFFFFFF").forEach { (n, hex) ->
+            list.add(FunctionAdapter.FunctionItem(n, type = R, group = "crossColor", isChecked = crossColor == hex, subtitle = hex))
+        }
+        list.add(FunctionAdapter.FunctionItem("辅助圆圈", type = H))
+        list.add(FunctionAdapter.FunctionItem("辅助圆圈开关", type = S, group = "circle", isChecked = prefs.getBoolean("circle_enabled", false)))
+        list.add(FunctionAdapter.FunctionItem("辅助圆圈大小", type = FunctionAdapter.TYPE_SLIDER, sliderValue = prefs.getInt("circle_size", 40), sliderMax = 100))
+        list.add(FunctionAdapter.FunctionItem("录屏", type = H))
+        list.add(FunctionAdapter.FunctionItem("录屏", type = S, group = "record", isChecked = prefs.getBoolean("record_enabled", false)))
+        return list
     }
 
     private var screenRecording = false
     private var mediaRecorder: android.media.MediaRecorder? = null
+    private var mediaProjection: android.media.projection.MediaProjection? = null
+    private var virtualDisplay: android.hardware.display.VirtualDisplay? = null
+    private var audioPlayer: android.media.MediaPlayer? = null
+
+    /** 开启悬浮窗时播放上传的音频（assets/start_audio.mp3） */
+    private fun playStartAudio() {
+        try {
+            audioPlayer?.let { runCatching { it.release() } }
+            val fd = assets.openFd("start_audio.mp3")
+            val mp = android.media.MediaPlayer()
+            mp.setDataSource(fd.fileDescriptor, fd.startOffset, fd.length)
+            fd.close()
+            mp.prepare()
+            mp.start()
+            audioPlayer = mp
+        } catch (e: Exception) {
+        }
+    }
 
     private fun handleRecordToggle(on: Boolean) {
         getSharedPreferences("mikasa_prefs", MODE_PRIVATE).edit().putBoolean("record_enabled", on).apply()
@@ -801,28 +867,106 @@ class FloatingWindowService : Service() {
         else { stopScreenRecord(); showFloatToast("录屏已关闭") }
     }
 
-    fun toggleScreenRecord() { if (screenRecording) stopScreenRecord() else startScreenRecord() }
+    fun toggleScreenRecord() { if (screenRecording) stopScreenRecord() else requestScreenRecord() }
 
-    private fun startScreenRecord() {
+    /** 请求系统录屏授权，授权后开始真实屏幕录制 */
+    private fun requestScreenRecord() {
+        try {
+            onProjectionGranted = { proj -> mainHandler.post { startScreenRecord(proj) } }
+            val act = android.content.Intent(this, ProjectionHostActivity::class.java)
+            act.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            startActivity(act)
+        } catch (e: Exception) {
+            showFloatToast("无法请求录屏授权")
+        }
+    }
+
+    private fun startScreenRecord(proj: android.media.projection.MediaProjection) {
         if (screenRecording) return
         try {
-            val file = java.io.File(getExternalFilesDir(null) ?: cacheDir, "record_${System.currentTimeMillis()}.mp4")
+            val file = java.io.File(getExternalFilesDir(null) ?: cacheDir, "screen_${System.currentTimeMillis()}.mp4")
             val r = android.media.MediaRecorder()
-            r.setAudioSource(android.media.MediaRecorder.AudioSource.MIC)
+            r.setVideoSource(android.media.MediaRecorder.VideoSource.SURFACE)
             r.setOutputFormat(android.media.MediaRecorder.OutputFormat.MPEG_4)
-            r.setAudioEncoder(android.media.MediaRecorder.AudioEncoder.AAC)
-            r.setAudioEncodingBitRate(128000); r.setAudioSamplingRate(44100)
-            r.setOutputFile(file.absolutePath); r.prepare(); r.start()
-            mediaRecorder = r; screenRecording = true
-            showFloatToast("开始录制：${file.name}")
-        } catch (e: Exception) { showFloatToast("录制失败：${e.message}") }
+            r.setVideoEncoder(android.media.MediaRecorder.VideoEncoder.H264)
+            r.setVideoSize(720, 1280)
+            r.setVideoEncodingBitRate(8_000_000)
+            r.setOutputFile(file.absolutePath)
+            r.prepare()
+            val dm = resources.displayMetrics
+            val vd = proj.createVirtualDisplay(
+                "xiaoran_screen_rec", dm.widthPixels, dm.heightPixels, dm.densityDpi,
+                0, r.surface, null, mainHandler
+            )
+            r.start()
+            mediaRecorder = r; virtualDisplay = vd; mediaProjection = proj; screenRecording = true
+            showFloatToast("开始录屏 → ${file.name}")
+        } catch (e: Exception) {
+            showFloatToast("录屏失败：${e.message}")
+            runCatching { virtualDisplay?.release() }
+            runCatching { mediaRecorder?.release() }
+            virtualDisplay = null; mediaRecorder = null
+        }
     }
 
     private fun stopScreenRecord() {
-        if (!screenRecording) return
+        if (!screenRecording && mediaRecorder == null && mediaProjection == null) return
         try { mediaRecorder?.stop() } catch (_: Exception) {}
-        mediaRecorder?.release(); mediaRecorder = null; screenRecording = false
-        showFloatToast("已停止录制")
+        mediaRecorder?.release()
+        runCatching { virtualDisplay?.release() }
+        runCatching { mediaProjection?.stop() }
+        mediaRecorder = null; virtualDisplay = null; mediaProjection = null
+        screenRecording = false
+        showFloatToast("已停止录屏")
+    }
+
+    /** 游戏辅助覆盖层：全屏透明悬浮层，画圆圈/准心（不拦截触摸） */
+    private fun ensureGameOverlay() {
+        if (gameOverlay != null) return
+        try {
+            val v = GameOverlayView(this)
+            val type = if (android.os.Build.VERSION.SDK_INT >= 26)
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            else @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_SYSTEM_ALERT
+            val p = WindowManager.LayoutParams(
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.MATCH_PARENT,
+                type,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                        WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                        WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                android.graphics.PixelFormat.TRANSLUCENT
+            )
+            windowManager.addView(v, p)
+            gameOverlay = v
+            gameOverlayParams = p
+            updateGameOverlay()
+        } catch (e: Exception) {
+            showFloatToast("辅助覆盖层需悬浮窗权限")
+        }
+    }
+
+    private fun updateGameOverlay() {
+        val v = gameOverlay ?: return
+        val prefs = getSharedPreferences("mikasa_prefs", MODE_PRIVATE)
+        v.setCircle(prefs.getBoolean("circle_enabled", false), prefs.getInt("circle_size", 40))
+        v.setCross(
+            prefs.getBoolean("cross_enabled", false),
+            prefs.getInt("cross_type", 0),
+            android.graphics.Color.parseColor(prefs.getString("cross_color", "#FFFF0000") ?: "#FFFF0000")
+        )
+    }
+
+    private fun removeGameOverlay() {
+        gameOverlay?.let { runCatching { windowManager.removeView(it) } }
+        gameOverlay = null
+        gameOverlayParams = null
+    }
+
+    /** 刷新杂类页（准心/圆圈状态变更后重绘列表） */
+    private fun refreshMiscPage() {
+        if (currentNavPosition != 3) return
+        tabPagerAdapter?.getAdapter(0)?.setItems(miscPageItems())
     }
 
     /** 根据导航项生成 Tab 与页面数据 */
@@ -902,6 +1046,8 @@ class FloatingWindowService : Service() {
         if (!cardVerified) return emptyList()
         val t = FunctionAdapter.TYPE_TEXT
         val items = mutableListOf<FunctionAdapter.FunctionItem>()
+        // 顶部一句问候
+        items.add(FunctionAdapter.FunctionItem("小染祝你天天开心～", type = t))
         // 公告在上
         items.add(FunctionAdapter.FunctionItem("公告", type = t))
         if (cardAnnouncements.isEmpty()) {
@@ -939,6 +1085,8 @@ class FloatingWindowService : Service() {
                 if (r.ok) {
                     cardVerified = true
                     cardInfo = "类型 ${r.type} · 到期 ${r.expiresAt.ifBlank { "永久" }}"
+                    processCardVerified = true
+                    processCardInfo = cardInfo
                     cardAnnouncements = ann
                     getSharedPreferences("mikasa_prefs", MODE_PRIVATE).edit()
                         .putBoolean("card_verified", true)
@@ -1467,6 +1615,9 @@ class FloatingWindowService : Service() {
     }
 
     override fun onDestroy() {
+        removeGameOverlay()
+        runCatching { audioPlayer?.release() }; audioPlayer = null
+        stopScreenRecord()
         dynamicIsland?.hide()
         dynamicIsland = null
         runCatching { unregisterReceiver(volumeKeyReceiver) }
