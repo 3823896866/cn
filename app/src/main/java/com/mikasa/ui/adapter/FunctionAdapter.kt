@@ -67,7 +67,7 @@ class FunctionAdapter(
         var expanded: Boolean = false,
         val group: String? = null,
         val subtitle: String = "",
-        val sliderValue: Int = 0,
+        var sliderValue: Int = 0,
         val sliderMax: Int = 100
     )
 
