@@ -303,7 +303,11 @@ class FloatingWindowService : Service() {
         val diEnabled = getSharedPreferences("mikasa_prefs", MODE_PRIVATE)
             .getBoolean("dynamic_island", true)
         if (diEnabled && dynamicIsland == null) {
-            dynamicIsland = DynamicIsland(this).also { it.show() }
+            dynamicIsland = DynamicIsland(this).also {
+                it.show()
+                it.onRecordDotClick = { toggleScreenRecord() }
+                it.setRecordDot(getSharedPreferences("mikasa_prefs", MODE_PRIVATE).getBoolean("record_enabled", false))
+            }
         }
 
         // 默认先显示悬浮球
@@ -426,7 +430,8 @@ class FloatingWindowService : Service() {
         }
 
         val cp = getSharedPreferences("mikasa_prefs", MODE_PRIVATE)
-        cardVerified = cp.getBoolean("card_verified", false)
+        // 不自动登录：每次启动都要重新验证一次；仅记住上次输入的卡密（card_key）用于 prefill
+        cardVerified = false
         cardInfo = cp.getString("card_info", "") ?: ""
 
         val inflater = LayoutInflater.from(this)
@@ -641,7 +646,14 @@ class FloatingWindowService : Service() {
             adapter.setItems(pages[position])
             // 开关切换 → 自定义消息通知
             adapter.onToggle = { name, checked ->
-                showFloatToast("${if (checked) "已开启" else "已关闭"} · $name")
+                if (name == "录屏") handleRecordToggle(checked)
+                else {
+                    getSharedPreferences("mikasa_prefs", MODE_PRIVATE).edit().putBoolean("toggle_$name", checked).apply()
+                    showFloatToast("${if (checked) "已开启" else "已关闭"} · $name")
+                }
+            }
+            adapter.onSlider = { _, value ->
+                getSharedPreferences("mikasa_prefs", MODE_PRIVATE).edit().putInt("circle_size", value).apply()
             }
             // 表单页（功能/美化）：注入按钮 + 单选（导入方式/文件）
             adapter.onButtonClick = { name -> if (currentFormZone != null) runInject(name) }
@@ -652,6 +664,11 @@ class FloatingWindowService : Service() {
                 gate?.visibility = android.view.View.VISIBLE
                 rv.visibility = android.view.View.GONE
                 val etCard = gate?.findViewById<android.widget.EditText>(R.id.et_card)
+                // 记住上次输入的卡密（prefill），但不自动登录，仍需点确认
+                if (etCard?.text?.toString().isNullOrEmpty()) {
+                    getSharedPreferences("mikasa_prefs", MODE_PRIVATE)
+                        .getString("card_key", "")?.let { etCard.setText(it) }
+                }
                 gate?.findViewById<android.widget.Button>(R.id.btn_verify)?.setOnClickListener {
                     verifyCardKey(etCard?.text?.toString()?.trim() ?: "")
                 }
@@ -756,6 +773,58 @@ class FloatingWindowService : Service() {
         }.start()
     }
 
+    private fun miscPageItems(): List<FunctionAdapter.FunctionItem> {
+        val prefs = getSharedPreferences("mikasa_prefs", MODE_PRIVATE)
+        val t = { n: String -> prefs.getBoolean("toggle_$n", false) }
+        return listOf(
+            FunctionAdapter.FunctionItem("杂类", type = FunctionAdapter.TYPE_HEADER),
+            FunctionAdapter.FunctionItem("准心辅助", type = FunctionAdapter.TYPE_GROUP, expanded = true, group = "assist"),
+            FunctionAdapter.FunctionItem("显示准心", type = FunctionAdapter.TYPE_GROUP_CHILD, group = "assist", isChecked = t("显示准心")),
+            FunctionAdapter.FunctionItem("自动锁定", type = FunctionAdapter.TYPE_GROUP_CHILD, group = "assist", isChecked = t("自动锁定")),
+            FunctionAdapter.FunctionItem("吸附对齐", type = FunctionAdapter.TYPE_GROUP_CHILD, group = "assist", isChecked = t("吸附对齐")),
+            FunctionAdapter.FunctionItem("高亮标记", type = FunctionAdapter.TYPE_GROUP_CHILD, group = "assist", isChecked = t("高亮标记")),
+            FunctionAdapter.FunctionItem("穿透辅助", type = FunctionAdapter.TYPE_GROUP_CHILD, group = "assist", isChecked = t("穿透辅助")),
+            FunctionAdapter.FunctionItem("辅助圆圈", type = FunctionAdapter.TYPE_HEADER),
+            FunctionAdapter.FunctionItem("辅助圆圈大小", type = FunctionAdapter.TYPE_SLIDER, sliderValue = prefs.getInt("circle_size", 40), sliderMax = 100),
+            FunctionAdapter.FunctionItem("录屏", type = FunctionAdapter.TYPE_HEADER),
+            FunctionAdapter.FunctionItem("录屏", type = FunctionAdapter.TYPE_SWITCH, group = "record", isChecked = prefs.getBoolean("record_enabled", false))
+        )
+    }
+
+    private var screenRecording = false
+    private var mediaRecorder: android.media.MediaRecorder? = null
+
+    private fun handleRecordToggle(on: Boolean) {
+        getSharedPreferences("mikasa_prefs", MODE_PRIVATE).edit().putBoolean("record_enabled", on).apply()
+        dynamicIsland?.setRecordDot(on)
+        if (on) showFloatToast("录屏已开启：点灵动岛红点开始录制")
+        else { stopScreenRecord(); showFloatToast("录屏已关闭") }
+    }
+
+    fun toggleScreenRecord() { if (screenRecording) stopScreenRecord() else startScreenRecord() }
+
+    private fun startScreenRecord() {
+        if (screenRecording) return
+        try {
+            val file = java.io.File(getExternalFilesDir(null) ?: cacheDir, "record_${System.currentTimeMillis()}.mp4")
+            val r = android.media.MediaRecorder()
+            r.setAudioSource(android.media.MediaRecorder.AudioSource.MIC)
+            r.setOutputFormat(android.media.MediaRecorder.OutputFormat.MPEG_4)
+            r.setAudioEncoder(android.media.MediaRecorder.AudioEncoder.AAC)
+            r.setAudioEncodingBitRate(128000); r.setAudioSamplingRate(44100)
+            r.setOutputFile(file.absolutePath); r.prepare(); r.start()
+            mediaRecorder = r; screenRecording = true
+            showFloatToast("开始录制：${file.name}")
+        } catch (e: Exception) { showFloatToast("录制失败：${e.message}") }
+    }
+
+    private fun stopScreenRecord() {
+        if (!screenRecording) return
+        try { mediaRecorder?.stop() } catch (_: Exception) {}
+        mediaRecorder?.release(); mediaRecorder = null; screenRecording = false
+        showFloatToast("已停止录制")
+    }
+
     /** 根据导航项生成 Tab 与页面数据 */
     private fun buildTabData(navPosition: Int): Pair<List<String>, List<List<FunctionAdapter.FunctionItem>>> {
         if (navPosition == 0) {
@@ -772,28 +841,14 @@ class FloatingWindowService : Service() {
             return listOf(title) to listOf(formItemsForZone(zone))
         }
         val tabs = when (navPosition) {
-            3 -> listOf(getString(R.string.tab_effect), getString(R.string.tab_sound), getString(R.string.tab_other))
+            3 -> listOf("杂类")
             4 -> listOf(getString(R.string.tab_general), getString(R.string.tab_about))
             else -> listOf(getString(R.string.tab_home))
         }
 
         val pages = tabs.map { tabName ->
             when (tabName) {
-                getString(R.string.tab_effect) -> listOf(
-                    FunctionAdapter.FunctionItem("击杀特效"),
-                    FunctionAdapter.FunctionItem("枪口火焰"),
-                    FunctionAdapter.FunctionItem("弹痕效果")
-                )
-                getString(R.string.tab_sound) -> listOf(
-                    FunctionAdapter.FunctionItem("击杀音效"),
-                    FunctionAdapter.FunctionItem("背景音乐"),
-                    FunctionAdapter.FunctionItem("语音包")
-                )
-                getString(R.string.tab_other) -> listOf(
-                    FunctionAdapter.FunctionItem("准星定制"),
-                    FunctionAdapter.FunctionItem("界面美化"),
-                    FunctionAdapter.FunctionItem("其他功能")
-                )
+                "杂类" -> miscPageItems()
                 getString(R.string.tab_general) -> listOf(
                     FunctionAdapter.FunctionItem("自动更新"),
                     FunctionAdapter.FunctionItem("性能优化"),
@@ -915,6 +970,22 @@ class FloatingWindowService : Service() {
                     if (viewPager?.currentItem != index) {
                         viewPager?.setCurrentItem(index, true)
                     }
+                }
+                // 长按放大且变色（拖拽重排为后续项，当前给视觉反馈）
+                tabView.setOnLongClickListener {
+                    tabView.animate().scaleX(1.35f).scaleY(1.35f).setDuration(130).start()
+                    tabView.setBackgroundColor(getColor(R.color.primary_dark))
+                    textView.setTextColor(getColor(R.color.white))
+                    showFloatToast("长按放大：拖动可切换该页签")
+                    true
+                }
+                tabView.setOnTouchListener { v, ev ->
+                    if (ev.action == android.view.MotionEvent.ACTION_UP ||
+                        ev.action == android.view.MotionEvent.ACTION_CANCEL
+                    ) {
+                        v.animate().scaleX(1f).scaleY(1f).setDuration(150).start()
+                    }
+                    false
                 }
 
                 container.addView(tabView)
