@@ -677,6 +677,14 @@ class FloatingWindowService : Service() {
                         getSharedPreferences("mikasa_prefs", MODE_PRIVATE).edit().putInt("cross_size", value).apply()
                         updateGameOverlay()
                     }
+                    "准心位置 X" -> {
+                        getSharedPreferences("mikasa_prefs", MODE_PRIVATE).edit().putInt("cross_x", value).apply()
+                        updateGameOverlay()
+                    }
+                    "准心位置 Y" -> {
+                        getSharedPreferences("mikasa_prefs", MODE_PRIVATE).edit().putInt("cross_y", value).apply()
+                        updateGameOverlay()
+                    }
                 }
             }
             // 表单页（功能/美化）：注入按钮 + 单选（导入方式/文件）
@@ -856,6 +864,8 @@ class FloatingWindowService : Service() {
             list.add(FunctionAdapter.FunctionItem(n, type = R, group = "crossColor", isChecked = crossColor == hex, subtitle = hex))
         }
         list.add(FunctionAdapter.FunctionItem("准心大小", type = FunctionAdapter.TYPE_SLIDER, sliderValue = prefs.getInt("cross_size", 40), sliderMax = 100))
+        list.add(FunctionAdapter.FunctionItem("准心位置 X", type = FunctionAdapter.TYPE_SLIDER, sliderValue = prefs.getInt("cross_x", 50), sliderMax = 100))
+        list.add(FunctionAdapter.FunctionItem("准心位置 Y", type = FunctionAdapter.TYPE_SLIDER, sliderValue = prefs.getInt("cross_y", 50), sliderMax = 100))
         list.add(FunctionAdapter.FunctionItem("辅助圆圈", type = H))
         list.add(FunctionAdapter.FunctionItem("辅助圆圈开关", type = S, group = "circle", isChecked = prefs.getBoolean("circle_enabled", false)))
         list.add(FunctionAdapter.FunctionItem("辅助圆圈大小", type = FunctionAdapter.TYPE_SLIDER, sliderValue = prefs.getInt("circle_size", 40), sliderMax = 100))
@@ -976,6 +986,7 @@ class FloatingWindowService : Service() {
         val prefs = getSharedPreferences("mikasa_prefs", MODE_PRIVATE)
         v.setCircle(prefs.getBoolean("circle_enabled", false), prefs.getInt("circle_size", 40))
         v.applyCrossSize(prefs.getInt("cross_size", 40))
+        v.applyCrossPosition(prefs.getInt("cross_x", 50), prefs.getInt("cross_y", 50))
         v.setCross(
             prefs.getBoolean("cross_enabled", false),
             prefs.getInt("cross_type", 0),
