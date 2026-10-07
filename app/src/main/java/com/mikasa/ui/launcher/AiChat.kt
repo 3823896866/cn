@@ -26,9 +26,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
@@ -162,10 +164,14 @@ fun AiChatPage(
     aiButtons: List<Pair<String, String>>,
     onPreset: (String) -> Unit,
     humanMode: Boolean,
-    onTransferHuman: () -> Unit
+    onTransferHuman: () -> Unit,
+    cardVerified: Boolean,
+    onBuy: () -> Unit,
+    onVerifyCard: (String) -> Unit
 ) {
     val listState = rememberLazyListState()
     var input by remember { mutableStateOf("") }
+    var cardInput by remember { mutableStateOf("") }
 
     // 后端未开启 AI 助手 → 维护中
     if (!aiEnabled) {
@@ -257,8 +263,46 @@ fun AiChatPage(
 
         Spacer(Modifier.height(8.dp))
 
-        // 预设按钮（后端设置，固定回答；非人工模式的主要提问方式）
-        if (aiButtons.isNotEmpty()) {
+        // 未验证卡密 → 卡密门槛（输入验证 / 购买）；验证后才能用预设按钮
+        if (!cardVerified) {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.35f)
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text("🔒 验证卡密", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "验证并绑定卡密后才能使用 AI 助手功能；不验证卡密无法使用。",
+                        fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, lineHeight = 17.sp
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Button(onClick = onBuy, shape = RoundedCornerShape(12.dp)) {
+                        Text("没有卡密？点我购买", fontSize = 13.sp)
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        TextField(
+                            value = cardInput,
+                            onValueChange = { cardInput = it },
+                            label = { Text("输入卡密") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        OutlinedButton(
+                            onClick = {
+                                val c = cardInput.trim()
+                                if (c.isNotEmpty()) { onVerifyCard(c); cardInput = "" }
+                            },
+                            shape = RoundedCornerShape(12.dp)
+                        ) { Text("验证", fontSize = 13.sp) }
+                    }
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+        } else if (aiButtons.isNotEmpty()) {
+            // 预设按钮（已验证卡密后可用；固定回答）
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
