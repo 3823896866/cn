@@ -168,6 +168,12 @@ object XiaoRanApi {
     /** 支持 +1（后端计支持率）。 */
     fun support() { req("POST", "/api/support", "{}"); }
 
-    /** 提交反馈建议。 */
-    fun submitFeedback(text: String) { req("POST", "/api/feedback", JSONObject().put("text", text).toString()) }
+    /** 提交反馈建议（后端按设备每天限 3 条）。返回今日剩余条数（>=0），失败/已达上限返回 -1。 */
+    fun submitFeedback(text: String, device: String = ""): Int {
+        val r = req("POST", "/api/feedback", JSONObject().put("text", text).put("device", device).toString()) ?: return -1
+        return runCatching {
+            val o = JSONObject(r)
+            if (o.optBoolean("ok", false)) o.optInt("left", 0) else -1
+        }.getOrDefault(-1)
+    }
 }
