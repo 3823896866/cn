@@ -203,7 +203,7 @@ class DownloadService : Service() {
                 .setSmallIcon(com.mikasa.R.mipmap.ic_launcher)
                 .setContentTitle("正在下载").setContentText(name)
                 .setOngoing(true).setOnlyAlertOnce(true)
-                .setIndeterminateProgress()
+                .setProgress(0, 0, true)
                 .build())
         } else {
             nm.notify(ID_FOREGROUND, progNotification(name, (p * 100).toInt()))
