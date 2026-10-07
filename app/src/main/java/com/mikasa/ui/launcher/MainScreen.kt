@@ -400,7 +400,7 @@ fun MainScreen() {
                                 persistChat(aiMessages)
                             },
                             humanMode = aiHuman,
-                            onTransferHuman = { transferLabel@
+                            onTransferHuman = transferLabel@ {
                                 if (!cardVerified) {
                                     aiMessages = aiMessages + XiaoMiAi.Msg("assistant", "请先输入并验证卡密，才能使用转人工等所有功能～")
                                     persistChat(aiMessages)
