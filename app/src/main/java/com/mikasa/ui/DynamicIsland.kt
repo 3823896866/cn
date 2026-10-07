@@ -76,6 +76,22 @@ class DynamicIsland(private val context: Context) {
 
     private var recordDot: View? = null
     var onRecordDotClick: (() -> Unit)? = null
+    private var musicWired = false
+
+    /** 灵动岛卡片音乐控制：上一首/播放暂停/下一首/停止（切歌+关闭音乐） */
+    private fun wireMusicControls(card: View) {
+        if (musicWired) return
+        musicWired = true
+        com.mikasa.ui.launcher.MusicEngine.init(context)
+        card.findViewById<View>(R.id.btn_di_prev)?.isClickable = true
+        card.findViewById<View>(R.id.btn_di_playpause)?.isClickable = true
+        card.findViewById<View>(R.id.btn_di_next)?.isClickable = true
+        card.findViewById<View>(R.id.btn_di_stop)?.isClickable = true
+        card.findViewById<View>(R.id.btn_di_prev)?.setOnClickListener { com.mikasa.ui.launcher.MusicEngine.prev() }
+        card.findViewById<View>(R.id.btn_di_playpause)?.setOnClickListener { com.mikasa.ui.launcher.MusicEngine.toggle() }
+        card.findViewById<View>(R.id.btn_di_next)?.setOnClickListener { com.mikasa.ui.launcher.MusicEngine.next() }
+        card.findViewById<View>(R.id.btn_di_stop)?.setOnClickListener { com.mikasa.ui.launcher.MusicEngine.stop() }
+    }
 
     /** 录屏红点：开关录屏时显示/隐藏，点击触发 onRecordDotClick */
     fun setRecordDot(on: Boolean) {
@@ -128,6 +144,7 @@ class DynamicIsland(private val context: Context) {
 
     fun hide() {
         collapse()
+        musicWired = false
         handler.removeCallbacksAndMessages(null)
         unregisterBattery()
         stopChoreographer()
@@ -173,6 +190,7 @@ class DynamicIsland(private val context: Context) {
             return
         }
         overlay.setOnClickListener { collapse() }
+        wireMusicControls(card)
         updateCard()
 
         // 3D 透视：加大景深，让立起效果更真实
