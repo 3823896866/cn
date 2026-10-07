@@ -668,9 +668,15 @@ class FloatingWindowService : Service() {
                 }
             }
             adapter.onSlider = { name, value ->
-                if (name == "辅助圆圈大小") {
-                    getSharedPreferences("mikasa_prefs", MODE_PRIVATE).edit().putInt("circle_size", value).apply()
-                    updateGameOverlay()
+                when (name) {
+                    "辅助圆圈大小" -> {
+                        getSharedPreferences("mikasa_prefs", MODE_PRIVATE).edit().putInt("circle_size", value).apply()
+                        updateGameOverlay()
+                    }
+                    "准心大小" -> {
+                        getSharedPreferences("mikasa_prefs", MODE_PRIVATE).edit().putInt("cross_size", value).apply()
+                        updateGameOverlay()
+                    }
                 }
             }
             // 表单页（功能/美化）：注入按钮 + 单选（导入方式/文件）
@@ -743,7 +749,16 @@ class FloatingWindowService : Service() {
         items.add(FunctionAdapter.FunctionItem(if (zone == "功能") "功能文件" else "美化文件", type = FunctionAdapter.TYPE_HEADER))
         if (!st.loaded) items.add(FunctionAdapter.FunctionItem("加载中…", type = FunctionAdapter.TYPE_TEXT))
         else if (st.files.isEmpty()) items.add(FunctionAdapter.FunctionItem("暂无文件（后端未上传该分区）", type = FunctionAdapter.TYPE_TEXT))
-        else st.files.forEach { f -> items.add(FunctionAdapter.FunctionItem(f.name, group = "file", isChecked = st.selectedFile?.name == f.name, type = FunctionAdapter.TYPE_RADIO, subtitle = f.size)) }
+        else st.files.forEach { f ->
+            val dl = com.mikasa.ui.FilesApi.isDownloaded(applicationContext, f)
+            items.add(FunctionAdapter.FunctionItem(
+                f.name, group = "file",
+                isChecked = st.selectedFile?.name == f.name && dl,
+                type = FunctionAdapter.TYPE_RADIO,
+                subtitle = "${f.size} · ${if (dl) "已下载" else "未下载（先下载）"}",
+                enabled = dl
+            ))
+        }
         return items
     }
 
@@ -761,7 +776,7 @@ class FloatingWindowService : Service() {
             val files = com.mikasa.ui.FilesApi.list(zone)
             mainHandler.post {
                 st.files = files; st.loaded = true
-                if (st.selectedFile == null) st.selectedFile = files.firstOrNull()
+                if (st.selectedFile == null) st.selectedFile = files.firstOrNull { com.mikasa.ui.FilesApi.isDownloaded(applicationContext, it) }
                 refreshFormPage()
             }
         }.start()
@@ -790,7 +805,10 @@ class FloatingWindowService : Service() {
         val zone = currentFormZone ?: return
         val st = formState.getOrPut(zone) { FormState() }
         val sel = st.selectedFile
-        if (sel == null) { showFloatToast("请先选择一个文件"); return }
+        if (sel == null) { showFloatToast("请先选择一个已下载的文件"); return }
+        if (!com.mikasa.ui.FilesApi.isDownloaded(applicationContext, sel)) {
+            showFloatToast("该文件尚未下载，请到「文件」页下载后再注入"); return
+        }
         val path = if (st.importDefault) formSettings?.importPathDefault else formSettings?.importPathPak
         if (path.isNullOrBlank()) {
             showFloatToast("后端未配置导入路径（${if (st.importDefault) "默认" else "pak"}）"); return
@@ -831,6 +849,7 @@ class FloatingWindowService : Service() {
         listOf("红色" to "#FFFF0000", "绿色" to "#FF00E676", "黄色" to "#FFFFEB3B", "蓝色" to "#FF2196F3", "白色" to "#FFFFFFFF").forEach { (n, hex) ->
             list.add(FunctionAdapter.FunctionItem(n, type = R, group = "crossColor", isChecked = crossColor == hex, subtitle = hex))
         }
+        list.add(FunctionAdapter.FunctionItem("准心大小", type = FunctionAdapter.TYPE_SLIDER, sliderValue = prefs.getInt("cross_size", 40), sliderMax = 100))
         list.add(FunctionAdapter.FunctionItem("辅助圆圈", type = H))
         list.add(FunctionAdapter.FunctionItem("辅助圆圈开关", type = S, group = "circle", isChecked = prefs.getBoolean("circle_enabled", false)))
         list.add(FunctionAdapter.FunctionItem("辅助圆圈大小", type = FunctionAdapter.TYPE_SLIDER, sliderValue = prefs.getInt("circle_size", 40), sliderMax = 100))
@@ -950,6 +969,7 @@ class FloatingWindowService : Service() {
         val v = gameOverlay ?: return
         val prefs = getSharedPreferences("mikasa_prefs", MODE_PRIVATE)
         v.setCircle(prefs.getBoolean("circle_enabled", false), prefs.getInt("circle_size", 40))
+        v.setCrossSize(prefs.getInt("cross_size", 40))
         v.setCross(
             prefs.getBoolean("cross_enabled", false),
             prefs.getInt("cross_type", 0),
