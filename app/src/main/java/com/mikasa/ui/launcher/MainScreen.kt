@@ -1548,28 +1548,59 @@ private fun AnimChip(
     }
 }
 
-/** 视频背景：循环播放 assets/home_bg.mp4，无播放控件 */
+/** 视频背景：循环播放 assets/home_bg.mp4，无播放控件。
+ *  用 TextureView（Compose 友好、在 HorizontalPager 中不会因 SurfaceView 挖洞崩溃）
+ *  + file:///android_asset URI 数据源（避免 AssetFileDescriptor 被提前关闭导致解码时 fd 失效崩溃）；
+ *  创建/解码全程 try/catch + onErrorListener，资源缺失或解码失败也绝不闪退。 */
 @Composable
 private fun VideoBackground() {
-    var mp by remember { mutableStateOf<android.media.MediaPlayer?>(null) }
+    val playerRef = remember { arrayOf<android.media.MediaPlayer?>(null) }
     AndroidView(
         factory = { ctx ->
-            val sv = android.view.SurfaceView(ctx)
-            val player = android.media.MediaPlayer()
-            ctx.assets.openFd("home_bg.mp4").use { fd ->
-                player.setDataSource(fd.fileDescriptor, fd.startOffset, fd.length)
+            val texture = android.view.TextureView(ctx)
+            texture.surfaceTextureListener = object : android.view.TextureView.SurfaceTextureListener {
+                override fun onSurfaceTextureAvailable(st: android.graphics.SurfaceTexture, w: Int, h: Int) {
+                    try {
+                        val p = android.media.MediaPlayer()
+                        playerRef[0] = p
+                        p.setSurface(android.view.Surface(st))
+                        p.setDataSource(ctx, android.net.Uri.parse("file:///android_asset/home_bg.mp4"))
+                        p.isLooping = true
+                        p.setOnPreparedListener { it.start() }
+                        p.setOnErrorListener { mp, _, _ ->
+                            runCatching { mp.release() }
+                            if (playerRef[0] === mp) playerRef[0] = null
+                            true
+                        }
+                        p.prepareAsync()
+                    } catch (e: Exception) {
+                        // 资源缺失/解码失败：保持黑底，不闪退
+                        runCatching { playerRef[0]?.release() }
+                        playerRef[0] = null
+                    }
+                }
+
+                override fun onSurfaceTextureSizeChanged(st: android.graphics.SurfaceTexture, w: Int, h: Int) {}
+
+                override fun onSurfaceTextureDestroyed(st: android.graphics.SurfaceTexture): Boolean {
+                    runCatching { playerRef[0]?.release() }
+                    playerRef[0] = null
+                    false
+                }
+
+                override fun onSurfaceTextureUpdated(st: android.graphics.SurfaceTexture) {}
             }
-            player.setDisplay(sv.holder)
-            player.isLooping = true
-            player.setOnPreparedListener { it.start() }
-            player.prepareAsync()
-            mp = player
-            sv
+            texture
         },
-        modifier = Modifier.fillMaxSize()
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black)
     )
     DisposableEffect(Unit) {
-        onDispose { runCatching { mp?.release() }; mp = null }
+        onDispose {
+            runCatching { playerRef[0]?.release() }
+            playerRef[0] = null
+        }
     }
 }
 
