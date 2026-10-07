@@ -1198,13 +1198,15 @@ private fun startShizuku(context: Context): Boolean = try {
 } catch (e: Exception) { false }
 
 /** 请求 Shizuku 授权（官方 API）：需通道已连接；会弹 Shizuku 系统授权框。返回是否已授权。 */
-private fun grantShizuku(context: Context): Boolean = try {
-    if (!shizukuConnected()) return false
-    rikka.shizuku.Shizuku.requestPermission(1001)
-    Thread.sleep(1200)  // 等 Shizuku 授权弹窗结果
-    shizukuGranted()
-} catch (e: Throwable) {
-    false
+private fun grantShizuku(context: Context): Boolean {
+    return try {
+        if (!shizukuConnected()) return false
+        rikka.shizuku.Shizuku.requestPermission(1001)
+        Thread.sleep(1200)  // 等 Shizuku 授权弹窗结果
+        shizukuGranted()
+    } catch (e: Throwable) {
+        false
+    }
 }
 
 private fun shizukuStatusText(context: Context): String {
