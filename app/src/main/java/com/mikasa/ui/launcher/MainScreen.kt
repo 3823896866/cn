@@ -54,13 +54,17 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
@@ -142,6 +146,26 @@ fun MainScreen() {
     var csHumanSince by remember { mutableStateOf(prefs.getLong("cs_human_since", 0L)) }
     var csIngested by remember { mutableIntStateOf(prefs.getInt("cs_ingested_agent", 0)) }
     var csWaitingShown by remember { mutableStateOf(false) }
+
+    // AI 助手后端配置（开关/问候/预设按钮）+ 人工模式
+    var aiEnabled by remember { mutableStateOf(true) }
+    var aiGreeting by remember { mutableStateOf("") }
+    var aiButtons by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
+    var aiHuman by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        scope.launch {
+            val cfg = withContext(Dispatchers.IO) { com.mikasa.ui.XiaoRanApi.aiConfig() }
+            aiEnabled = cfg.enabled
+            aiGreeting = cfg.greeting
+            aiButtons = withContext(Dispatchers.IO) { com.mikasa.ui.XiaoRanApi.aiButtons() }
+            if (aiEnabled && aiGreeting.isNotBlank()) {
+                val GREET = "我是小染助手，小染 AI 已就位，有什么不懂的问题来问我吧～"
+                aiMessages = listOf(XiaoMiAi.Msg("assistant", aiGreeting)) +
+                    aiMessages.filter { it.content != GREET }
+                persistChat(aiMessages)
+            }
+        }
+    }
 
     fun persistChat(list: List<XiaoMiAi.Msg>) {
         prefs.edit().putString("ai_chat", XiaoMiAi.save(list)).apply()
@@ -247,10 +271,23 @@ fun MainScreen() {
     var userCount by remember { mutableIntStateOf(0) }
     scope.launch { userCount = withContext(Dispatchers.IO) { com.mikasa.ui.XiaoRanApi.activeUsers() } }
 
-    // ── 真实网络延迟（ms） ──
-    var latency by remember { mutableStateOf("测量中…") }
+    // ── 下个版本更新内容 + 支持/反馈（后端） ──
+    var nextVersion by remember { mutableStateOf("") }
     scope.launch {
-        latency = withContext(Dispatchers.IO) { measureLatency() }
+        nextVersion = withContext(Dispatchers.IO) { com.mikasa.ui.XiaoRanApi.nextVersion() }
+    }
+    fun doSupport() {
+        scope.launch {
+            withContext(Dispatchers.IO) { com.mikasa.ui.XiaoRanApi.support() }
+            Toast.makeText(context, "已支持 +1，感谢！", Toast.LENGTH_SHORT).show()
+        }
+    }
+    fun doFeedback(text: String) {
+        if (text.isBlank()) return
+        scope.launch {
+            withContext(Dispatchers.IO) { com.mikasa.ui.XiaoRanApi.submitFeedback(text) }
+            Toast.makeText(context, "已收到你的反馈建议", Toast.LENGTH_SHORT).show()
+        }
     }
 
     // Pager 滑动与导航联动
@@ -320,7 +357,9 @@ fun MainScreen() {
                             moduleCount = totalModuleCount,
                             userCount = userCount,
                             todayActivations = todayActivations,
-                            latency = latency,
+                            nextVersion = nextVersion,
+                            onSupport = { doSupport() },
+                            onFeedback = { doFeedback(it) },
                             onLaunch = {
                                 // 真实激活计数
                                 val n = prefs.getInt("today_activations", 0) + 1
@@ -338,7 +377,23 @@ fun MainScreen() {
                             messages = aiMessages,
                             loading = aiLoading,
                             onSend = { sendAiMessage(it) },
-                            onClear = { clearAiChat() }
+                            onClear = { clearAiChat() },
+                            aiEnabled = aiEnabled,
+                            aiButtons = aiButtons,
+                            onPreset = { label ->
+                                val ans = aiButtons.firstOrNull { it.first == label }?.second ?: "（暂无对应回答）"
+                                aiMessages = aiMessages + XiaoMiAi.Msg("user", label) + XiaoMiAi.Msg("assistant", ans)
+                                persistChat(aiMessages)
+                            },
+                            humanMode = aiHuman,
+                            onTransferHuman = {
+                                aiHuman = true
+                                csHumanSince = System.currentTimeMillis()
+                                csWaitingShown = false
+                                prefs.edit().putLong("cs_human_since", csHumanSince).apply()
+                                aiMessages = aiMessages + XiaoMiAi.Msg("assistant", "已为您转接人工客服，请稍候…")
+                                persistChat(aiMessages)
+                            }
                         )
                         2 -> MusicPage()
                         3 -> PermissionsPage()
@@ -524,7 +579,9 @@ private fun HomePage(
     moduleCount: Int,
     userCount: Int,
     todayActivations: Int,
-    latency: String,
+    nextVersion: String,
+    onSupport: () -> Unit,
+    onFeedback: (String) -> Unit,
     onLaunch: () -> Unit,
     onStop: () -> Unit
 ) {
@@ -636,30 +693,56 @@ private fun HomePage(
 
         Spacer(Modifier.height(16.dp))
 
+        var showFeedbackDialog by remember { mutableStateOf(false) }
+        var feedbackText by remember { mutableStateOf("") }
+
         EnterAnimation(360) {
             AppCard(modifier = Modifier.fillMaxWidth()) {
                 Column {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Filled.CheckCircle, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(6.dp))
-                        Text("网络延迟（真实测量）", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                        Text("下个版本更新内容", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
                     }
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        latency,
-                        fontSize = 22.sp,
-                        fontWeight = FontWeight.Black,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        "「小染助手」页可找小染 AI 聊天；「设置」页可开关灵动岛、自定义背景。",
-                        fontSize = 12.sp,
-                        lineHeight = 18.sp,
+                        if (nextVersion.isBlank()) "敬请期待下个版本的更新内容～" else nextVersion,
+                        fontSize = 14.sp,
+                        lineHeight = 20.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    Spacer(Modifier.height(12.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Button(onClick = onSupport, shape = RoundedCornerShape(14.dp)) {
+                            Text("支持 ⭐", fontSize = 14.sp)
+                        }
+                        OutlinedButton(onClick = { showFeedbackDialog = true }, shape = RoundedCornerShape(14.dp)) {
+                            Text("反馈更新内容", fontSize = 14.sp)
+                        }
+                    }
                 }
             }
+        }
+        if (showFeedbackDialog) {
+            AlertDialog(
+                onDismissRequest = { showFeedbackDialog = false },
+                title = { Text("反馈建议") },
+                text = {
+                    TextField(
+                        value = feedbackText,
+                        onValueChange = { feedbackText = it },
+                        placeholder = { Text("写下你对下个版本的建议…") }
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        onFeedback(feedbackText)
+                        showFeedbackDialog = false
+                        feedbackText = ""
+                    }) { Text("提交") }
+                },
+                dismissButton = { TextButton(onClick = { showFeedbackDialog = false }) { Text("取消") } }
+            )
         }
         Spacer(Modifier.height(20.dp))
     }
@@ -765,6 +848,7 @@ private fun copyUriToFile(context: Context, uri: Uri): String? {
 private fun PermissionsPage() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val prefs = remember { context.getSharedPreferences("mikasa_prefs", Context.MODE_PRIVATE) }
     var showShizuku by remember { mutableStateOf(false) }
     var rootOk by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { rootOk = withContext(Dispatchers.IO) { rootAvailable() } }
@@ -866,13 +950,54 @@ private fun PermissionsPage() {
             Spacer(Modifier.height(20.dp))
         }
 
+        // ── Shizuku（开关 + 状态 + 检测） ──
+        var shizukuInstalledMemo by remember { mutableStateOf(false) }
+        var shizukuConnected by remember { mutableStateOf(false) }
+        var shizukuOn by remember { mutableStateOf(prefs.getBoolean("shizuku_on", false)) }
+        val refreshShizuku: () -> Unit = {
+            scope.launch {
+                val r = withContext(Dispatchers.IO) { shizukuInstalled(context) to shizukuAdbRunning() }
+                shizukuInstalledMemo = r.first
+                shizukuConnected = r.second
+            }
+        }
+        LaunchedEffect(Unit) { refreshShizuku() }
+
         EnterAnimation(360) {
-            PermissionCard(
-                title = "Shizuku 权限",
-                desc = "Shizuku 经无线调试/ADB 启动时 App 内检测不到属正常；下方弹窗可检测 ADB 通道并授权",
-                granted = false,
-                onClick = { showShizuku = true }
-            )
+            AppCard(modifier = Modifier.fillMaxWidth()) {
+                Column {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Shizuku 权限", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                if (!shizukuInstalledMemo) "未安装 Shizuku，无法授权（请先安装 Shizuku App）"
+                                else if (shizukuConnected) "Shizuku 通道已连接 ✅"
+                                else "已安装，请用系统「无线调试/ADB」启动 Shizuku",
+                                fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, lineHeight = 17.sp
+                            )
+                        }
+                        Spacer(Modifier.width(10.dp))
+                        Switch(
+                            checked = shizukuOn && shizukuConnected,
+                            enabled = shizukuInstalledMemo,
+                            onCheckedChange = { on ->
+                                shizukuOn = on
+                                prefs.edit().putBoolean("shizuku_on", on).apply()
+                                Toast.makeText(context, if (on) "Shizuku 模式已开启" else "Shizuku 模式已关闭", Toast.LENGTH_SHORT).show()
+                            }
+                        )
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        OutlinedButton(onClick = { refreshShizuku(); showShizuku = true }) { Text("检测 / 授权") }
+                    }
+                }
+            }
             Spacer(Modifier.height(20.dp))
         }
 
@@ -985,18 +1110,15 @@ private fun shizukuAdbRunning(): Boolean = try {
     false
 }
 
-private fun shizukuStatusText(context: Context): String {
-    if (shizukuAdbRunning()) return "Shizuku（无线调试/ADB）已运行 ✅（App 内授权检测不到属正常）"
-    return try {
-        val cls = Class.forName("dev.rikka.shizuku.Shizuku")
-        val prepared = cls.getMethod("isPrepared").invoke(null) as Boolean
-        val granted = cls.getMethod("isPermissionGranted", Int::class.java).invoke(null, 0) as Boolean
-        if (!prepared) "未检测到已就绪的 Shizuku（可安装 Shizuku App 并用无线调试启动）"
-        else if (granted) "Shizuku 已授权 ✅"
-        else "Shizuku 已就绪，但尚未授权本应用"
-    } catch (e: Throwable) {
-        "未安装 Shizuku 框架（无 dev.rikka.shizuku.Shizuku）"
+private fun shizukuInstalled(context: Context): Boolean =
+    listOf("moe.shizuku.privilege.api", "rikka.shizuku", "moe.shizuku.shizuku").any { pkg ->
+        try { context.packageManager.getPackageInfo(pkg, 0); true } catch (e: Exception) { false }
     }
+
+private fun shizukuStatusText(context: Context): String {
+    if (!shizukuInstalled(context)) return "未安装 Shizuku（无法授权）"
+    return if (shizukuAdbRunning()) "Shizuku 通道已连接 ✅"
+    else "Shizuku 已安装，请用系统「无线调试/ADB」启动它"
 }
 
 private fun grantShizuku(context: Context): Boolean = try {
