@@ -1014,7 +1014,13 @@ private fun PermissionsPage() {
                 shizukuGranted = r.second.second
             }
         }
-        LaunchedEffect(Unit) { refreshShizuku() }
+        // 持续自检测：启动 Shizuku/授权后无需手动点“检测”，状态自动更新
+        LaunchedEffect(Unit) {
+            while (true) {
+                refreshShizuku()
+                kotlinx.coroutines.delay(2500)
+            }
+        }
 
         EnterAnimation(360) {
             AppCard(modifier = Modifier.fillMaxWidth()) {
@@ -1195,23 +1201,35 @@ private fun shizukuInstalled(context: Context): Boolean =
         try { context.packageManager.getPackageInfo(pkg, 0); true } catch (e: Exception) { false }
     }
 
-/** 启动/唤起 Shizuku（触发其用无线调试/ADB 建立通道）。 */
-private fun startShizuku(context: Context): Boolean = try {
-    context.startActivity(
-        Intent("rikka.shizuku.intent.action.START")
-            .setPackage("moe.shizuku.privileged.api")
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-    )
-    true
-} catch (e: Exception) { false }
+/** 启动/唤起 Shizuku（打开 Shizuku App，用户在 App 内点“启动”建立通道）。 */
+private fun startShizuku(context: Context): Boolean {
+    val pkg = "moe.shizuku.privileged.api"
+    // 首选官方 launch intent（最可靠，能打开任意已装 App），回退到组件 / action
+    return try {
+        val intent = context.packageManager.getLaunchIntentForPackage(pkg)
+            ?: Intent().apply { setComponent(android.content.ComponentName(pkg, "rikka.shizuku.ShizukuActivity")) }
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        context.startActivity(intent)
+        true
+    } catch (e: Exception) {
+        try {
+            Intent("rikka.shizuku.intent.action.START").setPackage(pkg).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                .let { context.startActivity(it); true }
+        } catch (e2: Exception) { false }
+    }
+}
 
-/** 请求 Shizuku 授权（官方 API）：需通道已连接；会弹 Shizuku 系统授权框。返回是否已授权。 */
+/** 请求 Shizuku 授权（官方 API）：需通道已连接；弹 Shizuku 授权框，轮询确认结果。 */
 private fun grantShizuku(context: Context): Boolean {
     return try {
         if (!shizukuConnected()) return false
         rikka.shizuku.Shizuku.requestPermission(1001)
-        Thread.sleep(1200)  // 等 Shizuku 授权弹窗结果
-        shizukuGranted()
+        var ok = false
+        repeat(7) {
+            if (shizukuGranted()) { ok = true }
+            if (!ok) Thread.sleep(600)
+        }
+        ok
     } catch (e: Throwable) {
         false
     }
@@ -1253,6 +1271,12 @@ private fun FilesPage() {
     var downloaded by remember { mutableStateOf(com.mikasa.ui.FilesApi.downloadedNames(context)) }
     // 后台下载中（DownloadService 推进度；退软件/切页也继续）
     val downloading = com.mikasa.ui.DownloadHub.progress.collectAsState(initial = emptyMap()).value
+    // 本地“已点击/进行中”标记：点“下载”瞬间该行就显示“下载中 0%”，不必等后台服务首帧
+    var starting by remember { mutableStateOf<Set<String>>(emptySet()) }
+    val activeDownloads = (downloading.keys + starting).distinct().associateWith { downloading[it] ?: 0.0 }
+    LaunchedEffect(downloading, downloaded) {
+        starting = starting.filterNot { downloaded.contains(it) }
+    }
 
     fun loadAll() {
         loading = true
@@ -1268,8 +1292,9 @@ private fun FilesPage() {
     LaunchedEffect(downloading) { downloaded = com.mikasa.ui.FilesApi.downloadedNames(context) }
 
     fun download(item: com.mikasa.ui.FilesApi.FileItem) {
-        if (downloaded.contains(item.name)) return        // 已下载 → 无需下载（每个文件点一次）
-        if (downloading.containsKey(item.name)) return    // 正在下载 → 不重复点
+        if (downloaded.contains(item.name)) return        // 已下载 → 无需下载
+        if (starting.contains(item.name)) return          // 已点过/下载中 → 不重复（每个文件点一次）
+        starting = starting + item.name                    // 立即标记 → 该行变“下载中 0%”
         // 后台下载服务：前台通知带进度 + 完成通知，退出/切页也继续
         context.startService(
             android.content.Intent(context, com.mikasa.ui.DownloadService::class.java)
@@ -1311,9 +1336,9 @@ private fun FilesPage() {
                 Text("加载中…", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         } else {
-            FileSection("功能文件", funcFiles, downloading, downloaded) { download(it) }
+            FileSection("功能文件", funcFiles, activeDownloads, downloaded) { download(it) }
             Spacer(Modifier.height(16.dp))
-            FileSection("美化文件", beautyFiles, downloading, downloaded) { download(it) }
+            FileSection("美化文件", beautyFiles, activeDownloads, downloaded) { download(it) }
         }
         Spacer(Modifier.height(20.dp))
     }
