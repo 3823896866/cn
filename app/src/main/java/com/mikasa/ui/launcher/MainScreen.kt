@@ -95,6 +95,10 @@ import androidx.compose.ui.unit.sp
 import com.mikasa.ui.FloatingWindowService
 import com.mikasa.ui.theme.AiTheme
 import com.mikasa.ui.theme.AppColors
+import com.mikasa.ui.theme.LiquidGlassBackground
+import com.mikasa.ui.theme.glassBar
+import com.mikasa.ui.theme.glassPanel
+import androidx.compose.foundation.isSystemInDarkTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -339,13 +343,7 @@ fun MainScreen() {
                         .background(Color.White.copy(alpha = 0.32f))
                 )
             } else {
-                Image(
-                    painter = androidx.compose.ui.res.painterResource(com.mikasa.R.drawable.bg_default),
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize().graphicsLayer { alpha = 0.55f },
-                    contentScale = ContentScale.Crop
-                )
-                Box(Modifier.fillMaxSize().background(Color.White.copy(alpha = 0.18f)))
+                LiquidGlassBackground(blurRadius)
             }
 
             HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
@@ -533,7 +531,11 @@ private val navItems = listOf(
 
 @Composable
 private fun BottomNavBar(current: Int, onSelect: (Int) -> Unit) {
-    NavigationBar(containerColor = Color.White.copy(alpha = 0.92f)) {
+    val dark = isSystemInDarkTheme()
+    NavigationBar(
+        containerColor = if (dark) Color(0xFF141414).copy(alpha = 0.6f) else Color.White.copy(alpha = 0.5f),
+        modifier = Modifier.glassBar(dark)
+    ) {
         navItems.forEachIndexed { index, item ->
             val selected = current == index
             NavigationBarItem(
@@ -581,15 +583,11 @@ private fun BottomNavBar(current: Int, onSelect: (Int) -> Unit) {
 @Composable
 private fun AppCard(
     modifier: Modifier = Modifier,
-    backgroundColor: Color = Color.White,
     content: @Composable () -> Unit
 ) {
+    val dark = isSystemInDarkTheme()
     Box(
-        modifier = modifier
-            .shadow(4.dp, RoundedCornerShape(24.dp), clip = false)
-            .clip(RoundedCornerShape(24.dp))
-            .background(backgroundColor)
-            .padding(20.dp),
+        modifier = modifier.glassPanel(dark).padding(20.dp),
         content = { content() }
     )
 }
