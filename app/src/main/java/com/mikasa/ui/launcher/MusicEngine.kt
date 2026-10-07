@@ -10,7 +10,7 @@ import androidx.compose.runtime.mutableStateOf
  * 配合前台服务 MusicService，退出软件(后台)也继续播放。
  */
 object MusicEngine {
-    val hotSongs = listOf("把回忆拼好给你", "小美满", "孤勇者", "起风了", "光年之外", "漠河舞厅")
+    val hotSongs = listOf("小镇姑娘", "江海不渡你", "冬眠", "坏女孩", "心似烟火", "测脸", "须欢尽", "一个人挺好", "雨爱", "可不可以", "起风了", "罗生门")
 
     private val mp = MediaPlayer()
     private var ctx: Context? = null
