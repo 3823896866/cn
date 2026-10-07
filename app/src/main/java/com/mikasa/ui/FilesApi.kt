@@ -110,7 +110,7 @@ object FilesApi {
     /** 本地「小染注入」目录里已下载的文件名集合。 */
     fun downloadedNames(context: android.content.Context): Set<String> {
         val dir = xiaoranDir(context)
-        return runCatching { dir.listFiles()?.mapNotNull { it.name }?.toSet() }.getOrDefault(emptySet())
+        return runCatching { dir.listFiles()?.mapNotNull { it.name }?.toSet() ?: emptySet() }.getOrDefault(emptySet())
     }
 
     /** 流式下载（用于公开目录下载）。返回是否成功。 */
