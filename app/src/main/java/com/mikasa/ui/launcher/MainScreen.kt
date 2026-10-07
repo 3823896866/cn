@@ -152,6 +152,11 @@ fun MainScreen() {
     var aiGreeting by remember { mutableStateOf("") }
     var aiButtons by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
     var aiHuman by remember { mutableStateOf(false) }
+
+    fun persistChat(list: List<XiaoMiAi.Msg>) {
+        prefs.edit().putString("ai_chat", XiaoMiAi.save(list)).apply()
+    }
+
     LaunchedEffect(Unit) {
         scope.launch {
             val cfg = withContext(Dispatchers.IO) { com.mikasa.ui.XiaoRanApi.aiConfig() }
@@ -165,10 +170,6 @@ fun MainScreen() {
                 persistChat(aiMessages)
             }
         }
-    }
-
-    fun persistChat(list: List<XiaoMiAi.Msg>) {
-        prefs.edit().putString("ai_chat", XiaoMiAi.save(list)).apply()
     }
 
     fun sendAiMessage(text: String) {
