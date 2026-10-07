@@ -39,7 +39,7 @@ class GameOverlayView(context: Context) : View(context) {
     }
 
     /** 准心独立大小（0..100），自由调节、适配不同屏幕与习惯。 */
-    fun setCrossSize(size0to100: Int) {
+    fun applyCrossSize(size0to100: Int) {
         crossSize = size0to100.coerceIn(0, 100)
         invalidate()
     }
