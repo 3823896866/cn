@@ -46,7 +46,7 @@ fun Modifier.glassPanel(
     shadow: Dp = 8.dp
 ): Modifier = if (dark) {
     this
-        .shadow(shadow, shape, color = Color(0x40000000))
+        .shadow(shadow, shape)
         .clip(shape)
         .background(
             Brush.linearGradient(
@@ -57,7 +57,7 @@ fun Modifier.glassPanel(
         .border(1.dp, Color(0x33FFFFFF), shape)
 } else {
     this
-        .shadow(shadow, shape, color = Color(0x1A000000))
+        .shadow(shadow, shape)
         .clip(shape)
         .background(
             Brush.linearGradient(
