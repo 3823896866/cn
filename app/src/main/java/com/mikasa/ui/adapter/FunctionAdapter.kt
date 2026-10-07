@@ -67,6 +67,7 @@ class FunctionAdapter(
         var expanded: Boolean = false,
         val group: String? = null,
         val subtitle: String = "",
+        val enabled: Boolean = true,
         var sliderValue: Int = 0,
         val sliderMax: Int = 100
     )
@@ -200,8 +201,14 @@ class FunctionAdapter(
             else { sub.visibility = View.VISIBLE; sub.text = item.subtitle }
         }
         holder.radio?.isChecked = item.isChecked
-        holder.itemView.setOnClickListener {
-            onRadio?.invoke(item.group ?: "", item.name)
+        if (item.enabled) {
+            holder.itemView.alpha = 1f
+            holder.itemView.isClickable = true
+            holder.itemView.setOnClickListener { onRadio?.invoke(item.group ?: "", item.name) }
+        } else {
+            holder.itemView.alpha = 0.4f
+            holder.itemView.isClickable = false
+            holder.itemView.setOnClickListener(null)
         }
     }
 
