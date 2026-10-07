@@ -5,6 +5,8 @@ import android.widget.Toast
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.isSystemInDarkTheme
+import com.mikasa.ui.theme.glassPanel
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -223,6 +225,7 @@ fun MusicNoteIcon(color: Color, modifier: Modifier = Modifier) {
 fun MusicPage() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val dark = isSystemInDarkTheme()
 
     var keyword by remember { mutableStateOf("") }
     var songs by remember { mutableStateOf(listOf<MusicApi.Song>()) }
@@ -282,8 +285,8 @@ fun MusicPage() {
                 placeholder = { Text("搜歌名 / 歌手…", fontSize = 14.sp) },
                 singleLine = true,
                 colors = TextFieldDefaults.colors(
-                    focusedContainerColor = Color.White,
-                    unfocusedContainerColor = Color.White,
+                    focusedContainerColor = Color.White.copy(alpha = 0.7f),
+                    unfocusedContainerColor = Color.White.copy(alpha = 0.55f),
                     focusedIndicatorColor = Color.Transparent,
                     unfocusedIndicatorColor = Color.Transparent,
                     cursorColor = MaterialTheme.colorScheme.primary
@@ -330,7 +333,7 @@ fun MusicPage() {
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(14.dp))
-                        .background(if (active) MaterialTheme.colorScheme.primary else Color.White)
+                        .background(if (active) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.65f))
                         .clickable { playHot(i) }
                         .padding(horizontal = 10.dp, vertical = 6.dp)
                 ) {
@@ -345,8 +348,7 @@ fun MusicPage() {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(18.dp))
-                    .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.6f))
+                    .glassPanel(dark, alpha = 0.55f, shape = RoundedCornerShape(18.dp))
                     .padding(14.dp)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -436,8 +438,7 @@ fun MusicPage() {
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(120.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(Color.White)
+                    .glassPanel(dark, alpha = 0.55f, shape = RoundedCornerShape(14.dp))
                     .verticalScroll(rememberScrollState())
                     .padding(12.dp)
             ) {
