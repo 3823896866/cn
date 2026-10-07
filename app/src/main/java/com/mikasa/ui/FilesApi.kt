@@ -118,24 +118,29 @@ object FilesApi {
     } catch (e: Exception) { false }
 
     /** 下载到手机公开「下载/小染注入/」（Android 10+ 用 MediaStore，文件管理器可直接看到）；旧版退回 App 私有目录。返回展示路径。 */
-    fun downloadToPublic(context: android.content.Context, item: FileItem, onProgress: (Double) -> Unit = {}): String? = try {
+    /** 真实下载：先下到缓存(校验字节数>0)，再写 App 外部「小染注入」+ 公开 Download/小染注入(MediaStore)。失败返 null。 */
+    fun downloadToPublic(context: android.content.Context, item: FileItem, onProgress: (Double) -> Unit = {}): String? {
+        val tmp = java.io.File(context.cacheDir, "dl_real")
+        if (!tmp.exists()) tmp.mkdirs()
+        val localPath = download(item, tmp, onProgress) ?: return null
+        val local = java.io.File(localPath)
+        if (local.length() <= 0) { local.delete(); return null }
+        try { local.copyTo(java.io.File(xiaoranDir(context), local.name), overwrite = true) } catch (e: Exception) {}
         if (android.os.Build.VERSION.SDK_INT >= 29) {
-            val cr = context.contentResolver
-            val values = android.content.ContentValues()
-            values.put(android.provider.MediaStore.Downloads.DISPLAY_NAME, item.name)
-            values.put(android.provider.MediaStore.Downloads.RELATIVE_PATH, "Download/小染注入")
-            values.put(android.provider.MediaStore.Downloads.MIME_TYPE, "application/octet-stream")
-            val uri = cr.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
-            if (uri != null) {
-                cr.openOutputStream(uri).use { os -> if (os != null) { downloadStream(item, os, onProgress); return "手机「下载」目录 → 小染注入 → ${item.name}" } }
+            try {
+                val cr = context.contentResolver
+                val values = android.content.ContentValues()
+                values.put(android.provider.MediaStore.Downloads.DISPLAY_NAME, item.name)
+                values.put(android.provider.MediaStore.Downloads.RELATIVE_PATH, "Download/小染注入")
+                values.put(android.provider.MediaStore.Downloads.MIME_TYPE, "application/octet-stream")
+                val uri = cr.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                if (uri != null) cr.openOutputStream(uri)?.use { os -> local.inputStream().use { ins -> ins.copyTo(os) } }
+                return "手机「下载/小染注入」→ ${item.name}"
+            } catch (e: Exception) {
             }
         }
-        // 退回：App 私有 小染注入 目录
-        val dir = xiaoranDir(context)
-        val f = java.io.File(dir, item.name)
-        f.outputStream().use { os -> if (!downloadStream(item, os, onProgress)) return null }
-        f.absolutePath
-    } catch (e: Exception) { null }
+        return "App 目录「小染注入」→ ${item.name}"
+    }
 
     /** 导入 zip：自动解压到 targetDir，同名文件直接覆盖。返回解压出的文件数。 */
     fun importZip(zipFile: java.io.File, targetDir: java.io.File): Int {
