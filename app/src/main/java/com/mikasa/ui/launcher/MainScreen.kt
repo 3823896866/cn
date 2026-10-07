@@ -152,6 +152,8 @@ fun MainScreen() {
     var aiGreeting by remember { mutableStateOf("") }
     var aiButtons by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
     var aiHuman by remember { mutableStateOf(false) }
+    // AI 助手卡密门槛：验证并绑定卡密后才能使用
+    var cardVerified by remember { mutableStateOf(prefs.getString("card_key", "")?.isNotBlank() == true) }
 
     fun persistChat(list: List<XiaoMiAi.Msg>) {
         prefs.edit().putString("ai_chat", XiaoMiAi.save(list)).apply()
@@ -163,10 +165,13 @@ fun MainScreen() {
             aiEnabled = cfg.enabled
             aiGreeting = cfg.greeting
             aiButtons = withContext(Dispatchers.IO) { com.mikasa.ui.XiaoRanApi.aiButtons() }
-            if (aiEnabled && aiGreeting.isNotBlank()) {
+            if (aiEnabled) {
                 val GREET = "我是小染助手，小染 AI 已就位，有什么不懂的问题来问我吧～"
-                aiMessages = listOf(XiaoMiAi.Msg("assistant", aiGreeting)) +
-                    aiMessages.filter { it.content != GREET }
+                val CARD_MSG = "使用 AI 助手需先验证并绑定卡密，见下方输入框～"
+                var base = aiMessages
+                if (aiGreeting.isNotBlank()) base = listOf(XiaoMiAi.Msg("assistant", aiGreeting)) + base.filter { it.content != GREET }
+                if (!cardVerified && base.none { it.content == CARD_MSG }) base = base + XiaoMiAi.Msg("assistant", CARD_MSG)
+                aiMessages = base
                 persistChat(aiMessages)
             }
         }
@@ -394,6 +399,41 @@ fun MainScreen() {
                                 prefs.edit().putLong("cs_human_since", csHumanSince).apply()
                                 aiMessages = aiMessages + XiaoMiAi.Msg("assistant", "已为您转接人工客服，请稍候…")
                                 persistChat(aiMessages)
+                                // 通知后端：记录是哪个用户(卡密/设备)转了人工，后台可直接看到
+                                scope.launch {
+                                    withContext(Dispatchers.IO) {
+                                        com.mikasa.ui.XiaoRanApi.csHuman(
+                                            prefs.getString("card_key", "") ?: "",
+                                            "${Build.MANUFACTURER} ${Build.MODEL}",
+                                            csSession
+                                        )
+                                    }
+                                }
+                            },
+                            cardVerified = cardVerified,
+                            onBuy = {
+                                runCatching {
+                                    context.startActivity(
+                                        Intent(Intent.ACTION_VIEW, Uri.parse("https://www.fkdoos.com/shop/24AD8KYO"))
+                                    )
+                                }.onFailure { Toast.makeText(context, "无法打开购买页", Toast.LENGTH_SHORT).show() }
+                            },
+                            onVerifyCard = { code ->
+                                scope.launch {
+                                    val res = withContext(Dispatchers.IO) {
+                                        com.mikasa.ui.XiaoRanApi.verifyCard(code, "${Build.MANUFACTURER} ${Build.MODEL}")
+                                    }
+                                    if (res.ok) {
+                                        prefs.edit().putString("card_key", code).putBoolean("card_verified", true).apply()
+                                        cardVerified = true
+                                        aiMessages = aiMessages + XiaoMiAi.Msg("assistant", "卡密验证成功，AI 助手已解锁～")
+                                        persistChat(aiMessages)
+                                        Toast.makeText(context, "卡密已绑定，AI 助手可用", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        aiMessages = aiMessages + XiaoMiAi.Msg("assistant", "卡密无效：${res.reason.ifBlank { "请检查后重试" }}")
+                                        persistChat(aiMessages)
+                                    }
+                                }
                             }
                         )
                         2 -> MusicPage()
@@ -954,12 +994,16 @@ private fun PermissionsPage() {
         // ── Shizuku（开关 + 状态 + 检测） ──
         var shizukuInstalledMemo by remember { mutableStateOf(false) }
         var shizukuConnected by remember { mutableStateOf(false) }
+        var shizukuGranted by remember { mutableStateOf(false) }
         var shizukuOn by remember { mutableStateOf(prefs.getBoolean("shizuku_on", false)) }
         val refreshShizuku: () -> Unit = {
             scope.launch {
-                val r = withContext(Dispatchers.IO) { shizukuInstalled(context) to shizukuAdbRunning() }
+                val r = withContext(Dispatchers.IO) {
+                    shizukuInstalled(context) to (shizukuConnected() to shizukuGranted())
+                }
                 shizukuInstalledMemo = r.first
-                shizukuConnected = r.second
+                shizukuConnected = r.second.first
+                shizukuGranted = r.second.second
             }
         }
         LaunchedEffect(Unit) { refreshShizuku() }
@@ -976,26 +1020,53 @@ private fun PermissionsPage() {
                             Text("Shizuku 权限", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
                             Spacer(Modifier.height(4.dp))
                             Text(
-                                if (!shizukuInstalledMemo) "未安装 Shizuku，无法授权（请先安装 Shizuku App）"
-                                else if (shizukuConnected) "Shizuku 通道已连接 ✅"
-                                else "已安装，请用系统「无线调试/ADB」启动 Shizuku",
+                                if (!shizukuInstalledMemo) "未安装 Shizuku（包名 moe.shizuku.privileged.api，请先安装）"
+                                else if (shizukuGranted) "Shizuku 已授权 ✅"
+                                else if (shizukuConnected) "Shizuku 已连接，点「授权」获取权限"
+                                else "已安装：先「启动 Shizuku」（无线调试/ADB），再「授权」",
                                 fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, lineHeight = 17.sp
                             )
                         }
                         Spacer(Modifier.width(10.dp))
                         Switch(
-                            checked = shizukuOn && shizukuConnected,
+                            checked = shizukuGranted,
                             enabled = shizukuInstalledMemo,
                             onCheckedChange = { on ->
-                                shizukuOn = on
-                                prefs.edit().putBoolean("shizuku_on", on).apply()
-                                Toast.makeText(context, if (on) "Shizuku 模式已开启" else "Shizuku 模式已关闭", Toast.LENGTH_SHORT).show()
+                                if (!on) {
+                                    shizukuOn = false
+                                    prefs.edit().putBoolean("shizuku_on", false).apply()
+                                    Toast.makeText(context, "Shizuku 模式已关闭", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    scope.launch {
+                                        val ok = withContext(Dispatchers.IO) { grantShizuku(context) }
+                                        refreshShizuku()
+                                        shizukuOn = shizukuGranted
+                                        prefs.edit().putBoolean("shizuku_on", shizukuOn).apply()
+                                        Toast.makeText(
+                                            context,
+                                            if (shizukuGranted) "Shizuku 已授权 ✅" else if (ok) "Shizuku 已授权" else "未获取到：请先「启动 Shizuku」再授权",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                    }
+                                }
                             }
                         )
                     }
                     Spacer(Modifier.height(12.dp))
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                        OutlinedButton(onClick = { refreshShizuku(); showShizuku = true }) { Text("检测 / 授权") }
+                        OutlinedButton(onClick = {
+                            scope.launch {
+                                val launched = startShizuku(context)
+                                Toast.makeText(
+                                    context,
+                                    if (launched) "已唤起 Shizuku，请完成启动后点「授权」" else "未找到 Shizuku（包名 moe.shizuku.privileged.api）",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                                delay(1200); refreshShizuku()
+                            }
+                        }) { Text("启动 Shizuku") }
+                        Spacer(Modifier.width(8.dp))
+                        OutlinedButton(onClick = { refreshShizuku(); showShizuku = true }) { Text("授权") }
                     }
                 }
             }
@@ -1104,31 +1175,43 @@ private fun rootAvailable(): Boolean {
     return false
 }
 
-/** Shizuku 是否经 ADB/无线调试运行（本地 9555 端口可连）。 */
-private fun shizukuAdbRunning(): Boolean = try {
-    java.net.Socket().apply { soTimeout = 1500 }.use { it.connect(java.net.InetSocketAddress("127.0.0.1", 9555)); true }
-} catch (e: Exception) {
-    false
-}
+/** Shizuku 通道是否已连接（官方 API pingBinder：需 Shizuku App 正通过无线调试/ADB/Root 运行）。 */
+private fun shizukuConnected(): Boolean = try { rikka.shizuku.Shizuku.pingBinder() } catch (e: Throwable) { false }
 
+/** Shizuku 是否已授权本应用（checkSelfPermission 返回 0 = PERMISSION_GRANTED）。 */
+private fun shizukuGranted(): Boolean = try { rikka.shizuku.Shizuku.checkSelfPermission() == 0 } catch (e: Throwable) { false }
+
+/** Shizuku App 是否已安装（正确包名 moe.shizuku.privileged.api）。 */
 private fun shizukuInstalled(context: Context): Boolean =
-    listOf("moe.shizuku.privilege.api", "rikka.shizuku", "moe.shizuku.shizuku").any { pkg ->
+    listOf("moe.shizuku.privileged.api", "rikka.shizuku", "moe.shizuku.shizuku").any { pkg ->
         try { context.packageManager.getPackageInfo(pkg, 0); true } catch (e: Exception) { false }
     }
 
-private fun shizukuStatusText(context: Context): String {
-    if (!shizukuInstalled(context)) return "未安装 Shizuku（无法授权）"
-    return if (shizukuAdbRunning()) "Shizuku 通道已连接 ✅"
-    else "Shizuku 已安装，请用系统「无线调试/ADB」启动它"
-}
-
-private fun grantShizuku(context: Context): Boolean = try {
-    val cls = Class.forName("dev.rikka.shizuku.Shizuku")
-    val m = cls.getMethod("requestPermissions", Int::class.java)
-    m.invoke(null, 0)
+/** 启动/唤起 Shizuku（触发其用无线调试/ADB 建立通道）。 */
+private fun startShizuku(context: Context): Boolean = try {
+    context.startActivity(
+        Intent("rikka.shizuku.intent.action.START")
+            .setPackage("moe.shizuku.privileged.api")
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    )
     true
+} catch (e: Exception) { false }
+
+/** 请求 Shizuku 授权（官方 API）：需通道已连接；会弹 Shizuku 系统授权框。返回是否已授权。 */
+private fun grantShizuku(context: Context): Boolean = try {
+    if (!shizukuConnected()) return false
+    rikka.shizuku.Shizuku.requestPermission(1001)
+    Thread.sleep(1200)  // 等 Shizuku 授权弹窗结果
+    shizukuGranted()
 } catch (e: Throwable) {
     false
+}
+
+private fun shizukuStatusText(context: Context): String {
+    if (!shizukuInstalled(context)) return "未安装 Shizuku（包名 moe.shizuku.privileged.api，请先安装）"
+    return if (shizukuGranted()) "Shizuku 已授权 ✅"
+    else if (shizukuConnected()) "Shizuku 已连接，点「授权」获取权限"
+    else "Shizuku 已安装，请先「启动 Shizuku」（无线调试/ADB），再点「授权」"
 }
 
 /* ================= 服务器页 ================= */
@@ -1549,27 +1632,31 @@ private fun AnimChip(
 }
 
 /** 视频背景：循环播放 assets/home_bg.mp4，无播放控件。
- *  用 TextureView（Compose 友好、在 HorizontalPager 中不会因 SurfaceView 挖洞崩溃）
- *  + file:///android_asset URI 数据源（避免 AssetFileDescriptor 被提前关闭导致解码时 fd 失效崩溃）；
- *  创建/解码全程 try/catch + onErrorListener，资源缺失或解码失败也绝不闪退。 */
+ *  先把 asset 视频拷到应用缓存文件，再 setDataSource(文件路径) 播放——这是最可靠的姿势
+ *  （避免 fd 提前关闭、asset URI 兼容性导致的黑屏）。TextureView 而非 SurfaceView
+ *  （在 HorizontalPager 里不挖洞不崩）。重入可复用/重建；全程 try/catch，绝不闪退。 */
 @Composable
 private fun VideoBackground() {
-    val holder = remember { android.media.MediaPlayer() }
+    val holder = remember { arrayOf<android.media.MediaPlayer?>(null) }
     AndroidView(
         factory = { ctx ->
             val texture = android.view.TextureView(ctx)
             texture.surfaceTextureListener = object : android.view.TextureView.SurfaceTextureListener {
                 override fun onSurfaceTextureAvailable(st: android.graphics.SurfaceTexture, w: Int, h: Int) {
+                    val file = copyAssetVideo(ctx) ?: return
+                    if (holder[0] == null) holder[0] = android.media.MediaPlayer()
+                    val p = holder[0] ?: return
                     runCatching {
-                        holder.setSurface(android.view.Surface(st))
-                        holder.setDataSource(ctx, android.net.Uri.parse("file:///android_asset/home_bg.mp4"))
-                        holder.isLooping = true
-                        holder.setOnPreparedListener { it.start() }
-                        holder.setOnErrorListener { p, _, _ ->
-                            runCatching { p.release() }
+                        p.setSurface(android.view.Surface(st))
+                        p.setDataSource(file.absolutePath)
+                        p.isLooping = true
+                        p.setOnPreparedListener { it.start() }
+                        p.setOnErrorListener { pl, _, _ ->
+                            runCatching { pl.release() }
+                            if (holder[0] === pl) holder[0] = null
                             true
                         }
-                        holder.prepareAsync()
+                        p.prepareAsync()
                     }
                 }
 
@@ -1577,7 +1664,8 @@ private fun VideoBackground() {
                 }
 
                 override fun onSurfaceTextureDestroyed(st: android.graphics.SurfaceTexture): Boolean {
-                    runCatching { holder.release() }
+                    runCatching { holder[0]?.release() }
+                    holder[0] = null
                     return false
                 }
 
@@ -1590,9 +1678,21 @@ private fun VideoBackground() {
     )
     DisposableEffect(Unit) {
         onDispose {
-            runCatching { holder.release() }
+            runCatching { holder[0]?.release() }
+            holder[0] = null
         }
     }
+}
+
+/** 把 asset 里的 home_bg.mp4 拷到应用缓存（已存在且非空则复用），返回可播放的文件。 */
+private fun copyAssetVideo(ctx: android.content.Context): File? = try {
+    val f = File(ctx.cacheDir, "home_bg.mp4")
+    if (f.exists() && f.length() > 0) f else {
+        ctx.assets.open("home_bg.mp4").use { input -> f.outputStream().use { input.copyTo(it) } }
+        if (f.length() > 0) f else null
+    }
+} catch (e: Exception) {
+    null
 }
 
 @Composable
