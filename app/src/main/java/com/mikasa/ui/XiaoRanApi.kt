@@ -128,4 +128,40 @@ object XiaoRanApi {
             if (arr.length() == 0) "bot" else arr.getJSONObject(0).optString("status", "bot")
         }.getOrDefault("bot")
     }
+
+    data class AiConfig(val enabled: Boolean, val greeting: String)
+
+    /** AI 助手开关 + 后端可设的自动问候语。失败返默认。 */
+    fun aiConfig(): AiConfig {
+        val def = AiConfig(true, "我是小染，有什么可以帮你？")
+        val r = req("GET", "/api/settings") ?: return def
+        return runCatching {
+            val o = JSONObject(r)
+            AiConfig(o.optBoolean("aiEnabled", true), o.optString("aiGreeting", def.greeting))
+        }.getOrDefault(def)
+    }
+
+    /** 后端预设按钮（固定回答）：(按钮文字, 回答)。 */
+    fun aiButtons(): List<Pair<String, String>> {
+        val r = req("GET", "/api/ai/buttons") ?: return emptyList()
+        return runCatching {
+            val arr = JSONArray(r)
+            (0 until arr.length()).map { i ->
+                val o = arr.getJSONObject(i)
+                o.optString("label", "") to o.optString("answer", "")
+            }.filter { it.first.isNotBlank() }
+        }.getOrDefault(emptyList())
+    }
+
+    /** 下个版本更新内容（后端 settings.nextVersion）。 */
+    fun nextVersion(): String {
+        val r = req("GET", "/api/settings") ?: return ""
+        return runCatching { JSONObject(r).optString("nextVersion", "") }.getOrDefault("")
+    }
+
+    /** 支持 +1（后端计支持率）。 */
+    fun support() { req("POST", "/api/support", "{}"); }
+
+    /** 提交反馈建议。 */
+    fun submitFeedback(text: String) { req("POST", "/api/feedback", JSONObject().put("text", text).toString()) }
 }
