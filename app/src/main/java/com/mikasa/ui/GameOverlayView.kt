@@ -16,6 +16,7 @@ class GameOverlayView(context: Context) : View(context) {
     var crossEnabled = false
     var crossType = 0            // 0=圆环+十字, 1=纯十字, 2=菱形
     var crossColor = Color.RED
+    var crossSize = 40           // 0..100，准心独立大小（与圆圈分开，自由调节）
 
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
@@ -34,6 +35,12 @@ class GameOverlayView(context: Context) : View(context) {
         crossEnabled = enabled
         crossType = type
         crossColor = color
+        invalidate()
+    }
+
+    /** 准心独立大小（0..100），自由调节、适配不同屏幕与习惯。 */
+    fun setCrossSize(size0to100: Int) {
+        crossSize = size0to100.coerceIn(0, 100)
         invalidate()
     }
 
@@ -56,17 +63,17 @@ class GameOverlayView(context: Context) : View(context) {
         // 准心十字架（和平精英风格）
         if (crossEnabled) {
             paint.color = crossColor
-            paint.strokeWidth = px(2.5f).toFloat()
-            val arm = px(28f + circleSize * 0.2f).toFloat()
-            val gap = px(6f).toFloat()
+            paint.strokeWidth = px(2f + crossSize * 0.03f).toFloat()
+            val arm = px(22f + crossSize * 1.3f).toFloat()
+            val gap = px(5f + crossSize * 0.05f).toFloat()
             when (crossType) {
                 0 -> { // 圆环 + 十字
-                    canvas.drawCircle(cx, cy, px(22f).toFloat(), paint)
+                    canvas.drawCircle(cx, cy, px(10f + crossSize * 0.15f).toFloat(), paint)
                     drawCross(canvas, cx, cy, arm, gap)
                 }
                 1 -> drawCross(canvas, cx, cy, arm, gap)          // 纯十字
                 2 -> { // 菱形准星
-                    val d = px(20f).toFloat()
+                    val d = px(10f + crossSize * 0.25f).toFloat()
                     val p1 = android.graphics.Path()
                     p1.moveTo(cx, cy - d); p1.lineTo(cx + d, cy)
                     p1.lineTo(cx, cy + d); p1.lineTo(cx - d, cy); p1.close()
