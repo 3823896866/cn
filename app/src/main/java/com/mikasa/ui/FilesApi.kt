@@ -69,7 +69,7 @@ object FilesApi {
     fun download(item: FileItem, destDir: java.io.File, onProgress: (Double) -> Unit = {}): String? = try {
         val conn = java.net.URL(url(item)).openConnection() as java.net.HttpURLConnection
         conn.connectTimeout = 8000
-        conn.readTimeout = 60000
+        conn.readTimeout = 300000
         val total = conn.contentLength.toLong()
         val outFile = java.io.File(destDir, item.name)
         java.io.File(destDir, item.name + ".part").delete()
