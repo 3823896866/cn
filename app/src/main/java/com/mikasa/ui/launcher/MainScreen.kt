@@ -1275,7 +1275,7 @@ private fun FilesPage() {
     var starting by remember { mutableStateOf<Set<String>>(emptySet()) }
     val activeDownloads = (downloading.keys + starting).distinct().associateWith { downloading[it] ?: 0.0 }
     LaunchedEffect(downloading, downloaded) {
-        starting = starting.filterNot { downloaded.contains(it) }
+        starting = starting.filterNot { downloaded.contains(it) }.toSet()
     }
 
     fun loadAll() {
