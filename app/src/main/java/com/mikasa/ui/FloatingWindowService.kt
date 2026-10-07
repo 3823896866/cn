@@ -969,7 +969,7 @@ class FloatingWindowService : Service() {
         val v = gameOverlay ?: return
         val prefs = getSharedPreferences("mikasa_prefs", MODE_PRIVATE)
         v.setCircle(prefs.getBoolean("circle_enabled", false), prefs.getInt("circle_size", 40))
-        v.setCrossSize(prefs.getInt("cross_size", 40))
+        v.applyCrossSize(prefs.getInt("cross_size", 40))
         v.setCross(
             prefs.getBoolean("cross_enabled", false),
             prefs.getInt("cross_type", 0),
