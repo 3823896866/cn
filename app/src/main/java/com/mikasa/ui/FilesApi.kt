@@ -101,6 +101,18 @@ object FilesApi {
         return d
     }
 
+    /** 该文件是否已下载到本地「小染注入」目录（已下载→无需再下载）。 */
+    fun isDownloaded(context: android.content.Context, item: FileItem): Boolean {
+        val f = java.io.File(xiaoranDir(context), item.name)
+        return f.exists() && f.length() > 0
+    }
+
+    /** 本地「小染注入」目录里已下载的文件名集合。 */
+    fun downloadedNames(context: android.content.Context): Set<String> {
+        val dir = xiaoranDir(context)
+        return runCatching { dir.listFiles()?.mapNotNull { it.name }?.toSet() }.getOrDefault(emptySet())
+    }
+
     /** 流式下载（用于公开目录下载）。返回是否成功。 */
     private fun downloadStream(item: FileItem, out: java.io.OutputStream, onProgress: (Double) -> Unit): Boolean = try {
         val conn = java.net.URL(url(item)).openConnection() as java.net.HttpURLConnection
