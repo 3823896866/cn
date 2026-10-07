@@ -1554,52 +1554,43 @@ private fun AnimChip(
  *  创建/解码全程 try/catch + onErrorListener，资源缺失或解码失败也绝不闪退。 */
 @Composable
 private fun VideoBackground() {
-    val playerRef = remember { arrayOf<android.media.MediaPlayer?>(null) }
+    val holder = remember { android.media.MediaPlayer() }
     AndroidView(
         factory = { ctx ->
             val texture = android.view.TextureView(ctx)
             texture.surfaceTextureListener = object : android.view.TextureView.SurfaceTextureListener {
                 override fun onSurfaceTextureAvailable(st: android.graphics.SurfaceTexture, w: Int, h: Int) {
-                    try {
-                        val p = android.media.MediaPlayer()
-                        playerRef[0] = p
-                        p.setSurface(android.view.Surface(st))
-                        p.setDataSource(ctx, android.net.Uri.parse("file:///android_asset/home_bg.mp4"))
-                        p.isLooping = true
-                        p.setOnPreparedListener { it.start() }
-                        p.setOnErrorListener { mp, _, _ ->
-                            runCatching { mp.release() }
-                            if (playerRef[0] === mp) playerRef[0] = null
+                    runCatching {
+                        holder.setSurface(android.view.Surface(st))
+                        holder.setDataSource(ctx, android.net.Uri.parse("file:///android_asset/home_bg.mp4"))
+                        holder.isLooping = true
+                        holder.setOnPreparedListener { it.start() }
+                        holder.setOnErrorListener { p, _, _ ->
+                            runCatching { p.release() }
                             true
                         }
-                        p.prepareAsync()
-                    } catch (e: Exception) {
-                        // 资源缺失/解码失败：保持黑底，不闪退
-                        runCatching { playerRef[0]?.release() }
-                        playerRef[0] = null
+                        holder.prepareAsync()
                     }
                 }
 
-                override fun onSurfaceTextureSizeChanged(st: android.graphics.SurfaceTexture, w: Int, h: Int) {}
-
-                override fun onSurfaceTextureDestroyed(st: android.graphics.SurfaceTexture): Boolean {
-                    runCatching { playerRef[0]?.release() }
-                    playerRef[0] = null
-                    false
+                override fun onSurfaceTextureSizeChanged(st: android.graphics.SurfaceTexture, w: Int, h: Int) {
                 }
 
-                override fun onSurfaceTextureUpdated(st: android.graphics.SurfaceTexture) {}
+                override fun onSurfaceTextureDestroyed(st: android.graphics.SurfaceTexture): Boolean {
+                    runCatching { holder.release() }
+                    return false
+                }
+
+                override fun onSurfaceTextureUpdated(st: android.graphics.SurfaceTexture) {
+                }
             }
             texture
         },
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black)
+        modifier = Modifier.fillMaxSize().background(Color.Black)
     )
     DisposableEffect(Unit) {
         onDispose {
-            runCatching { playerRef[0]?.release() }
-            playerRef[0] = null
+            runCatching { holder.release() }
         }
     }
 }
