@@ -55,4 +55,7 @@ dependencies {
     implementation 'androidx.compose.animation:animation'
     implementation 'androidx.activity:activity-compose:1.8.2'
     implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.7.0'
+
+    // Shizuku API（获取受保护目录写入权限，无需 Root/无障碍）
+    implementation 'dev.rikka.shizuku:api:13.1.5'
 }
