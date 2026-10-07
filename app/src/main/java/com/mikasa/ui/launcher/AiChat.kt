@@ -207,16 +207,16 @@ fun AiChatPage(
                 Spacer(Modifier.height(4.dp))
                 Text("小染助手 · 小染 AI · 上下文 188 字", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            // 转人工按钮（右上角新增）
+            // 转人工按钮（需已验证卡密才可点；未验证时置灰）
             Text(
                 "转人工",
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Bold,
-                color = Color.White,
+                color = if (cardVerified) Color.White else Color.White.copy(alpha = 0.5f),
                 modifier = Modifier
                     .clip(RoundedCornerShape(14.dp))
-                    .background(MaterialTheme.colorScheme.primary)
-                    .clickable { onTransferHuman() }
+                    .background(if (cardVerified) MaterialTheme.colorScheme.primary else Color.Gray.copy(alpha = 0.5f))
+                    .clickable(enabled = cardVerified) { onTransferHuman() }
                     .padding(horizontal = 14.dp, vertical = 8.dp)
             )
             Spacer(Modifier.width(8.dp))
@@ -327,8 +327,8 @@ fun AiChatPage(
             Spacer(Modifier.height(10.dp))
         }
 
-        // 输入栏：仅转人工后可发送消息
-        if (humanMode) {
+        // 输入栏：仅「已验证卡密 且 已转人工」后可发送消息
+        if (humanMode && cardVerified) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
