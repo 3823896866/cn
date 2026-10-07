@@ -56,8 +56,7 @@ object XiaoRanApi {
         }.getOrDefault(emptyList())
     }
 
-    /** 发客服消息：返回 机器人回复 + 会话状态(bot/human)；离线返回 null（调用方回退本地）。 */
-    fun csSend(cardKey: String, device: String, text: String, image: String, sessionId: String): CsResult? {
+    /** 发客服消息：返回 机器人回复 + 会话状态(bot/human)；离线返回 null（调用方回退本地）。 */    fun csSend(cardKey: String, device: String, text: String, image: String, sessionId: String): CsResult? {
         val r = req("POST", "/api/cs/message", JSONObject()
             .put("sessionId", sessionId).put("cardKey", cardKey)
             .put("device", device).put("text", text).put("image", image).toString())
@@ -70,6 +69,13 @@ object XiaoRanApi {
                 o.optString("sessionId", sessionId)
             )
         }.getOrNull()
+    }
+
+    /** 转人工：标记会话为人工并记录用户身份（卡密/设备），供后台直接看到是哪个用户。 */
+    fun csHuman(cardKey: String, device: String, sessionId: String) {
+        req("POST", "/api/cs/human", JSONObject()
+            .put("sessionId", sessionId).put("cardKey", cardKey)
+            .put("device", device).toString())
     }
 
     /** 取某会话里客服(agent)已回复的消息（用于前端轮询接收人工回复）。 */
