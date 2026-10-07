@@ -15,6 +15,18 @@
     <!-- 读取外部存储（用于加载本地立绘） -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <!-- 可看见 Shizuku 等其它已装 App（Android 11+ 包可见性），否则无法检测/唤起/授权 Shizuku -->
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
+    <queries>
+        <package android:name="moe.shizuku.privileged.api" />
+        <package android:name="moe.shizuku.privilege.api" />
+        <package android:name="rikka.shizuku" />
+        <package android:name="dev.rikka.shizuku" />
+        <package android:name="com.rikka.shizuku" />
+        <intent>
+            <action android:name="rikka.shizuku.intent.action.START" />
+        </intent>
+    </queries>
 
     <application
         android:allowBackup="true"
@@ -62,6 +74,13 @@ android:foregroundServiceType="specialUse|mediaProjection" />
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
+
+        <!-- 后台下载服务：前台通知带进度条，退出/切页也继续 -->
+        <service
+            android:name=".ui.DownloadService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="dataSync|specialUse" />
 
         <!-- 透明 Activity：请求系统录屏(MediaProjection)授权 -->
         <activity
