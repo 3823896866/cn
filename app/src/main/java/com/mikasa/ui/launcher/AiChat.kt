@@ -3,6 +3,8 @@ package com.mikasa.ui.launcher
 import androidx.compose.foundation.background
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,6 +29,7 @@ import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
@@ -154,10 +157,29 @@ fun AiChatPage(
     messages: List<XiaoMiAi.Msg>,
     loading: Boolean,
     onSend: (String) -> Unit,
-    onClear: () -> Unit
+    onClear: () -> Unit,
+    aiEnabled: Boolean,
+    aiButtons: List<Pair<String, String>>,
+    onPreset: (String) -> Unit,
+    humanMode: Boolean,
+    onTransferHuman: () -> Unit
 ) {
     val listState = rememberLazyListState()
     var input by remember { mutableStateOf("") }
+
+    // 后端未开启 AI 助手 → 维护中
+    if (!aiEnabled) {
+        Column(
+            Modifier.fillMaxSize().padding(32.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalArrangement = Arrangement.Center
+        ) {
+            Text("⚙️", fontSize = 40.sp)
+            Spacer(Modifier.height(12.dp))
+            Text("功能维护中，等待通知哦", fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurface)
+        }
+        return
+    }
 
     // 新消息自动滚到底
     LaunchedEffect(messages.size) {
@@ -180,6 +202,19 @@ fun AiChatPage(
                 Spacer(Modifier.height(4.dp))
                 Text("小染助手 · 小染 AI · 上下文 188 字", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
+            // 转人工按钮（右上角新增）
+            Text(
+                "转人工",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.White,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(MaterialTheme.colorScheme.primary)
+                    .clickable { onTransferHuman() }
+                    .padding(horizontal = 14.dp, vertical = 8.dp)
+            )
+            Spacer(Modifier.width(8.dp))
             // 手动清空按钮
             Text(
                 "清空",
@@ -223,43 +258,70 @@ fun AiChatPage(
 
         Spacer(Modifier.height(8.dp))
 
-        // 输入栏
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            TextField(
-                value = input,
-                onValueChange = { input = it },
+        // 预设按钮（后端设置，固定回答；非人工模式的主要提问方式）
+        if (aiButtons.isNotEmpty()) {
+            Row(
                 modifier = Modifier
-                    .weight(1f)
-                    .clip(RoundedCornerShape(22.dp)),
-                placeholder = { Text("问小染点什么…", fontSize = 14.sp) },
-                singleLine = true,
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = Color.White,
-                    unfocusedContainerColor = Color.White,
-                    focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent,
-                    cursorColor = MaterialTheme.colorScheme.primary
-                )
-            )
-            Spacer(Modifier.width(8.dp))
-            // 发送按钮
-            Box(
-                modifier = Modifier
-                    .size(46.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primary)
-                    .clickable {
-                        val text = input.trim()
-                        if (text.isEmpty() || loading) return@clickable
-                        input = ""
-                        onSend(text)
-                    },
-                contentAlignment = Alignment.Center
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Icon(Icons.Filled.Send, null, tint = Color.White, modifier = Modifier.size(20.dp))
+                aiButtons.forEach { (label, _) ->
+                    Surface(
+                        onClick = { onPreset(label) },
+                        color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.4f),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Text(
+                            label,
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+        }
+
+        // 输入栏：仅转人工后可发送消息
+        if (humanMode) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TextField(
+                    value = input,
+                    onValueChange = { input = it },
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(22.dp)),
+                    placeholder = { Text("转人工：输入消息…", fontSize = 14.sp) },
+                    singleLine = true,
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = Color.White,
+                        unfocusedContainerColor = Color.White,
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent,
+                        cursorColor = MaterialTheme.colorScheme.primary
+                    )
+                )
+                Spacer(Modifier.width(8.dp))
+                Box(
+                    modifier = Modifier
+                        .size(46.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primary)
+                        .clickable {
+                            val text = input.trim()
+                            if (text.isEmpty() || loading) return@clickable
+                            input = ""
+                            onSend(text)
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Filled.Send, null, tint = Color.White, modifier = Modifier.size(20.dp))
+                }
             }
         }
         Spacer(Modifier.height(6.dp))
