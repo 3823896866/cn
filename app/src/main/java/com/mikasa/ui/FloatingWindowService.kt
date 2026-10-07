@@ -740,7 +740,7 @@ class FloatingWindowService : Service() {
         val st = formState.getOrPut(zone) { FormState() }
         val items = mutableListOf<FunctionAdapter.FunctionItem>()
         items.add(FunctionAdapter.FunctionItem(zone, type = FunctionAdapter.TYPE_HEADER))
-        items.add(FunctionAdapter.FunctionItem("注入", type = FunctionAdapter.TYPE_BUTTON))
+        items.add(FunctionAdapter.FunctionItem("注入", type = FunctionAdapter.TYPE_BUTTON, subtitle = if (shizukuGranted()) "已授权 Shizuku" else "需 Shizuku 授权"))
         items.add(FunctionAdapter.FunctionItem("导入方式", type = FunctionAdapter.TYPE_HEADER))
         items.add(FunctionAdapter.FunctionItem("默认导入", group = "import", isChecked = st.importDefault,
             type = FunctionAdapter.TYPE_RADIO, subtitle = importPathSubtitle(true)))
@@ -800,8 +800,14 @@ class FloatingWindowService : Service() {
         refreshFormPage()
     }
 
-    /** 注入：按所选文件 + 导入方式，导入到后端配置的导入路径（自动解压 zip，同名替换） */
+    /** Shizuku 是否已授权本应用（写入目标游戏目录必须）。 */
+    private fun shizukuGranted(): Boolean = try { rikka.shizuku.Shizuku.checkSelfPermission() == 0 } catch (e: Throwable) { false }
+
+    /** 注入：按所选文件 + 导入方式，导入到后端配置的导入路径（自动解压 zip，同名替换）。需 Shizuku 授权。 */
     private fun runInject(buttonName: String) {
+        if (!shizukuGranted()) {
+            showFloatToast("需先获取 Shizuku 权限：到「权限」页点 启动 Shizuku → 授权；未授权无法写入目标游戏目录"); return
+        }
         val zone = currentFormZone ?: return
         val st = formState.getOrPut(zone) { FormState() }
         val sel = st.selectedFile
