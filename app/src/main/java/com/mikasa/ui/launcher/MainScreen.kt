@@ -70,6 +70,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -295,8 +296,17 @@ fun MainScreen() {
     fun doFeedback(text: String) {
         if (text.isBlank()) return
         scope.launch {
-            withContext(Dispatchers.IO) { com.mikasa.ui.XiaoRanApi.submitFeedback(text) }
-            Toast.makeText(context, "已收到你的反馈建议", Toast.LENGTH_SHORT).show()
+            val dev = "${Build.MANUFACTURER} ${Build.MODEL}"
+            val left = withContext(Dispatchers.IO) { com.mikasa.ui.XiaoRanApi.submitFeedback(text, dev) }
+            Toast.makeText(
+                context,
+                when {
+                    left < 0 -> "今日反馈次数已用完（每天最多 3 条）"
+                    left == 0 -> "已收到反馈（今日 3 条已用完）"
+                    else -> "已收到反馈（今日还可 $left 条）"
+                },
+                Toast.LENGTH_LONG
+            ).show()
         }
     }
 
@@ -1239,7 +1249,10 @@ private fun FilesPage() {
     var funcFiles by remember { mutableStateOf<List<com.mikasa.ui.FilesApi.FileItem>>(emptyList()) }
     var beautyFiles by remember { mutableStateOf<List<com.mikasa.ui.FilesApi.FileItem>>(emptyList()) }
     var loading by remember { mutableStateOf(false) }
-    var downloading by remember { mutableStateOf<Map<String, Double>>(emptyMap()) }
+    // 已下载（本地「小染注入」目录有该文件 → 无需下载）
+    var downloaded by remember { mutableStateOf(com.mikasa.ui.FilesApi.downloadedNames(context)) }
+    // 后台下载中（DownloadService 推进度；退软件/切页也继续）
+    val downloading = com.mikasa.ui.DownloadHub.progress.collectAsState(initial = emptyMap()).value
 
     fun loadAll() {
         loading = true
@@ -1251,16 +1264,18 @@ private fun FilesPage() {
     }
 
     LaunchedEffect(Unit) { loadAll() }
+    // 下载状态变化（开始/完成）时刷新“已下载”
+    LaunchedEffect(downloading) { downloaded = com.mikasa.ui.FilesApi.downloadedNames(context) }
 
     fun download(item: com.mikasa.ui.FilesApi.FileItem) {
-        scope.launch {
-            downloading = downloading + (item.name to 0.0)
-            val res = withContext(Dispatchers.IO) {
-                com.mikasa.ui.FilesApi.downloadToPublic(context, item) { p -> downloading = downloading + (item.name to p) }
-            }
-            downloading = downloading - item.name
-            Toast.makeText(context, if (res != null) "下载成功" else "下载失败，请稍后再试", Toast.LENGTH_LONG).show()
-        }
+        if (downloaded.contains(item.name)) return        // 已下载 → 无需下载（每个文件点一次）
+        if (downloading.containsKey(item.name)) return    // 正在下载 → 不重复点
+        // 后台下载服务：前台通知带进度 + 完成通知，退出/切页也继续
+        context.startService(
+            android.content.Intent(context, com.mikasa.ui.DownloadService::class.java)
+                .putExtra("url", com.mikasa.ui.FilesApi.url(item))
+                .putExtra("name", item.name)
+        )
     }
 
     Column(
@@ -1296,9 +1311,9 @@ private fun FilesPage() {
                 Text("加载中…", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         } else {
-            FileSection("功能文件", funcFiles, downloading) { download(it) }
+            FileSection("功能文件", funcFiles, downloading, downloaded) { download(it) }
             Spacer(Modifier.height(16.dp))
-            FileSection("美化文件", beautyFiles, downloading) { download(it) }
+            FileSection("美化文件", beautyFiles, downloading, downloaded) { download(it) }
         }
         Spacer(Modifier.height(20.dp))
     }
@@ -1309,6 +1324,7 @@ private fun FileSection(
     title: String,
     files: List<com.mikasa.ui.FilesApi.FileItem>,
     downloading: Map<String, Double>,
+    downloaded: Set<String>,
     onDownload: (com.mikasa.ui.FilesApi.FileItem) -> Unit
 ) {
     AppCard(modifier = Modifier.fillMaxWidth()) {
@@ -1319,6 +1335,7 @@ private fun FileSection(
                 Text("（暂无文件，请到后端上传）", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {
                 files.forEach { item ->
+                    val done = downloaded.contains(item.name)
                     val prog = downloading[item.name]
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
@@ -1329,10 +1346,17 @@ private fun FileSection(
                             Text("${item.size} · ${item.zone}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         Spacer(Modifier.width(8.dp))
-                        if (prog != null) {
-                            Text("${(prog * 100).toInt()}%", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
-                        } else {
-                            androidx.compose.material3.TextButton(onClick = { onDownload(item) }) { Text("下载") }
+                        when {
+                            done -> Text("已下载 ✓", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(end = 8.dp))
+                            prog != null -> Column(Modifier.width(120.dp)) {
+                                androidx.compose.material3.LinearProgressIndicator(
+                                    progress = prog.toFloat(),
+                                    modifier = Modifier.fillMaxWidth().height(6.dp)
+                                )
+                                Spacer(Modifier.height(2.dp))
+                                Text("下载中 ${(prog * 100).toInt()}%", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
+                            }
+                            else -> androidx.compose.material3.TextButton(onClick = { onDownload(item) }) { Text("下载") }
                         }
                     }
                 }
