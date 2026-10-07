@@ -398,7 +398,7 @@ private fun ChatBubble(msg: XiaoMiAi.Msg) {
                 .clip(RoundedCornerShape(18.dp))
                 .background(
                     if (isUser) MaterialTheme.colorScheme.primary
-                    else Color.White
+                    else Color.White.copy(alpha = 0.7f)
                 )
                 .padding(horizontal = 14.dp, vertical = 10.dp)
         ) {
