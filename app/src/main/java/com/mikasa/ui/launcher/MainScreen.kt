@@ -400,7 +400,12 @@ fun MainScreen() {
                                 persistChat(aiMessages)
                             },
                             humanMode = aiHuman,
-                            onTransferHuman = {
+                            onTransferHuman = { transferLabel@
+                                if (!cardVerified) {
+                                    aiMessages = aiMessages + XiaoMiAi.Msg("assistant", "请先输入并验证卡密，才能使用转人工等所有功能～")
+                                    persistChat(aiMessages)
+                                    return@transferLabel
+                                }
                                 aiHuman = true
                                 csHumanSince = System.currentTimeMillis()
                                 csWaitingShown = false
@@ -1195,28 +1200,41 @@ private fun shizukuConnected(): Boolean = try { rikka.shizuku.Shizuku.pingBinder
 /** Shizuku 是否已授权本应用（checkSelfPermission 返回 0 = PERMISSION_GRANTED）。 */
 private fun shizukuGranted(): Boolean = try { rikka.shizuku.Shizuku.checkSelfPermission() == 0 } catch (e: Throwable) { false }
 
-/** Shizuku App 是否已安装（正确包名 moe.shizuku.privileged.api）。 */
+/** Shizuku App 是否已安装（覆盖各版本/变体包名；需 Manifest 里 <queries>/QUERY_ALL_PACKAGES 才可看见）。 */
 private fun shizukuInstalled(context: Context): Boolean =
-    listOf("moe.shizuku.privileged.api", "rikka.shizuku", "moe.shizuku.shizuku").any { pkg ->
+    listOf(
+        "moe.shizuku.privileged.api",   // Shizuku v11+
+        "moe.shizuku.privilege.api",     // 旧拼写
+        "rikka.shizuku",                 // 旧版
+        "dev.rikka.shizuku",
+        "com.rikka.shizuku",
+        "moe.shizuku.shizuku"
+    ).any { pkg ->
         try { context.packageManager.getPackageInfo(pkg, 0); true } catch (e: Exception) { false }
     }
 
-/** 启动/唤起 Shizuku（打开 Shizuku App，用户在 App 内点“启动”建立通道）。 */
+/** 启动/唤起 Shizuku（逐个尝试已知包名，用官方 launch intent，用户在 Shizuku App 内点“启动”建立通道）。 */
 private fun startShizuku(context: Context): Boolean {
-    val pkg = "moe.shizuku.privileged.api"
-    // 首选官方 launch intent（最可靠，能打开任意已装 App），回退到组件 / action
-    return try {
-        val intent = context.packageManager.getLaunchIntentForPackage(pkg)
-            ?: Intent().apply { setComponent(android.content.ComponentName(pkg, "rikka.shizuku.ShizukuActivity")) }
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        context.startActivity(intent)
-        true
-    } catch (e: Exception) {
-        try {
-            Intent("rikka.shizuku.intent.action.START").setPackage(pkg).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                .let { context.startActivity(it); true }
-        } catch (e2: Exception) { false }
+    val pkgs = listOf(
+        "moe.shizuku.privileged.api", "moe.shizuku.privilege.api",
+        "rikka.shizuku", "dev.rikka.shizuku", "com.rikka.shizuku"
+    )
+    for (pkg in pkgs) {
+        // 首选官方 launch intent（最可靠，能拉起任意已装 App）
+        val launch = context.packageManager.getLaunchIntentForPackage(pkg)
+        if (launch != null) {
+            launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            if (runCatching { context.startActivity(launch) }.isSuccess) return true
+        }
+        // 回退：显式组件
+        if (runCatching {
+            context.startActivity(Intent().apply {
+                setComponent(android.content.ComponentName(pkg, "rikka.shizuku.ShizukuActivity"))
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            })
+        }.isSuccess) return true
     }
+    return false
 }
 
 /** 请求 Shizuku 授权（官方 API）：需通道已连接；弹 Shizuku 授权框，轮询确认结果。 */
@@ -1264,6 +1282,15 @@ private fun FilesPage() {
             Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
         }
     }
+    // 下载前请求通知权限（Android 13+）；不阻塞下载，用户拒绝只是静默通知、文件照样下完
+    val dlPermsLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { /* 结果不影响下载 */ }
+    fun ensureDlPermissions() {
+        val need = mutableListOf<String>()
+        if (Build.VERSION.SDK_INT >= 33 &&
+            context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) need.add(android.Manifest.permission.POST_NOTIFICATIONS)
+        if (need.isNotEmpty()) dlPermsLauncher.launch(need.toTypedArray())
+    }
     var funcFiles by remember { mutableStateOf<List<com.mikasa.ui.FilesApi.FileItem>>(emptyList()) }
     var beautyFiles by remember { mutableStateOf<List<com.mikasa.ui.FilesApi.FileItem>>(emptyList()) }
     var loading by remember { mutableStateOf(false) }
@@ -1274,8 +1301,10 @@ private fun FilesPage() {
     // 本地“已点击/进行中”标记：点“下载”瞬间该行就显示“下载中 0%”，不必等后台服务首帧
     var starting by remember { mutableStateOf<Set<String>>(emptySet()) }
     val activeDownloads = (downloading.keys + starting).distinct().associateWith { downloading[it] ?: 0.0 }
+    // 清理“已点击/进行中”本地标记：只保留真正在下载中的（DownloadService 首帧即推送）。
+    // 下载成功→进入 downloaded 显示“已下载”；失败→还原成“下载”按钮，不再卡 0%。
     LaunchedEffect(downloading, downloaded) {
-        starting = starting.filterNot { downloaded.contains(it) }.toSet()
+        starting = starting.filter { it in downloading }.toSet()
     }
 
     fun loadAll() {
@@ -1295,6 +1324,7 @@ private fun FilesPage() {
         if (downloaded.contains(item.name)) return        // 已下载 → 无需下载
         if (starting.contains(item.name)) return          // 已点过/下载中 → 不重复（每个文件点一次）
         starting = starting + item.name                    // 立即标记 → 该行变“下载中 0%”
+        ensureDlPermissions()                              // 请求通知权限（不阻塞下载）
         // 后台下载服务：前台通知带进度 + 完成通知，退出/切页也继续
         context.startService(
             android.content.Intent(context, com.mikasa.ui.DownloadService::class.java)
@@ -1374,12 +1404,22 @@ private fun FileSection(
                         when {
                             done -> Text("已下载 ✓", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(end = 8.dp))
                             prog != null -> Column(Modifier.width(120.dp)) {
-                                androidx.compose.material3.LinearProgressIndicator(
-                                    progress = prog.toFloat(),
-                                    modifier = Modifier.fillMaxWidth().height(6.dp)
-                                )
-                                Spacer(Modifier.height(2.dp))
-                                Text("下载中 ${(prog * 100).toInt()}%", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
+                                if (prog < 0) {
+                                    // total 未知 → 不定进度（转圈条），不卡 0%
+                                    androidx.compose.material3.LinearProgressIndicator(
+                                        progress = -1f,
+                                        modifier = Modifier.fillMaxWidth().height(6.dp)
+                                    )
+                                    Spacer(Modifier.height(2.dp))
+                                    Text("下载中…", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
+                                } else {
+                                    androidx.compose.material3.LinearProgressIndicator(
+                                        progress = prog.toFloat(),
+                                        modifier = Modifier.fillMaxWidth().height(6.dp)
+                                    )
+                                    Spacer(Modifier.height(2.dp))
+                                    Text("下载中 ${(prog * 100).toInt()}%", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
+                                }
                             }
                             else -> androidx.compose.material3.TextButton(onClick = { onDownload(item) }) { Text("下载") }
                         }
