@@ -17,6 +17,8 @@ class GameOverlayView(context: Context) : View(context) {
     var crossType = 0            // 0=圆环+十字, 1=纯十字, 2=菱形
     var crossColor = Color.RED
     var crossSize = 40           // 0..100，准心独立大小（与圆圈分开，自由调节）
+    var crossX = 50              // 0..100，准心 X 位置（屏幕宽度百分比，50=正中）
+    var crossY = 50              // 0..100，准心 Y 位置（屏幕高度百分比，50=正中）
 
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
@@ -44,6 +46,13 @@ class GameOverlayView(context: Context) : View(context) {
         invalidate()
     }
 
+    /** 准心 X/Y 位置（0..100，屏幕百分比，50=正中），支持自由调节方位。 */
+    fun applyCrossPosition(x0to100: Int, y0to100: Int) {
+        crossX = x0to100.coerceIn(0, 100)
+        crossY = y0to100.coerceIn(0, 100)
+        invalidate()
+    }
+
     fun clearColor() {
         paint.color = Color.RED
         invalidate()
@@ -51,8 +60,8 @@ class GameOverlayView(context: Context) : View(context) {
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        val cx = width / 2f
-        val cy = height / 2f
+        val cx = width * (crossX / 100f)
+        val cy = height * (crossY / 100f)
         // 辅助圆圈（红圈）
         if (circleEnabled && circleSize > 0) {
             val r = px(20f + circleSize * 1.2f).toFloat()   // 20..140 dp 随大小伸缩
