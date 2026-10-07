@@ -171,8 +171,7 @@ fun AiChatPage(
     if (!aiEnabled) {
         Column(
             Modifier.fillMaxSize().padding(32.dp),
-            verticalArrangement = Arrangement.Center,
-            horizontalArrangement = Arrangement.Center
+            verticalArrangement = Arrangement.Center
         ) {
             Text("⚙️", fontSize = 40.sp)
             Spacer(Modifier.height(12.dp))
