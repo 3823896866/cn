@@ -1027,6 +1027,28 @@ private fun PermissionsPage() {
             }
         }
 
+        // ── Shizuku 终端：输入「小染注入权限」→ 自动授权 + 自动注入已下载文件 ──
+        var terminalInput by remember { mutableStateOf("") }
+        var terminalRunning by remember { mutableStateOf(false) }
+        var terminalLog by remember { mutableStateOf<List<String>>(emptyList()) }
+        val termHandler = remember { android.os.Handler(android.os.Looper.getMainLooper()) }
+        fun runTerminalCommand() {
+            val cmd = terminalInput.trim()
+            if (cmd.isBlank() || terminalRunning) return
+            terminalRunning = true
+            terminalLog = terminalLog + "\$ $cmd"
+            scope.launch {
+                withContext(Dispatchers.IO) {
+                    com.mikasa.ui.ShizukuOps.terminalCommand(context, cmd) { line ->
+                        termHandler.post { terminalLog = terminalLog + line }
+                    }
+                }
+                terminalInput = ""
+                terminalRunning = false
+                refreshShizuku()
+            }
+        }
+
         EnterAnimation(360) {
             AppCard(modifier = Modifier.fillMaxWidth()) {
                 Column {
@@ -1086,6 +1108,46 @@ private fun PermissionsPage() {
                         }) { Text("启动 Shizuku") }
                         Spacer(Modifier.width(8.dp))
                         OutlinedButton(onClick = { refreshShizuku(); showShizuku = true }) { Text("授权") }
+                    }
+
+                    // ── Shizuku 终端：口令自动授权 + 自动注入 ──
+                    Spacer(Modifier.height(14.dp))
+                    Box(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Color(0xFF0F1220))) {
+                        Column(Modifier.fillMaxWidth().padding(12.dp)) {
+                            Text("Shizuku 终端", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7FD1FF))
+                            Spacer(Modifier.height(3.dp))
+                            Text("输入「小染注入权限」→ 自动授权并注入已下载文件", fontSize = 11.sp, color = Color(0xFF8A93A6))
+                            Spacer(Modifier.height(8.dp))
+                            Column(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(Color.Black).padding(8.dp)) {
+                                val logLines = terminalLog.takeLast(8)
+                                if (logLines.isEmpty()) {
+                                    Text("（等待输入命令…）", fontSize = 11.sp, color = Color(0xFF5A6273), fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
+                                }
+                                logLines.forEach { ln ->
+                                    Text(ln, fontSize = 11.sp, color =
+                                        if (ln.startsWith("✅") || ln.startsWith("√")) Color(0xFF5BE3A0)
+                                        else if (ln.startsWith("×")) Color(0xFFFF7A7A)
+                                        else Color(0xFFC9D1D9),
+                                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
+                                }
+                            }
+                            Spacer(Modifier.height(8.dp))
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                TextField(
+                                    value = terminalInput,
+                                    onValueChange = { terminalInput = it },
+                                    modifier = Modifier.weight(1f).clip(RoundedCornerShape(8.dp)),
+                                    singleLine = true,
+                                    placeholder = { Text("小染注入权限", fontSize = 12.sp, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace) },
+                                    textStyle = androidx.compose.ui.text.TextStyle(androidx.compose.ui.text.font.FontFamily.Monospace, 13.sp, Color(0xFFE6EDF3)),
+                                    colors = androidx.compose.material3.TextFieldDefaults.colors(containerColor = Color(0xFF1A1F2B), cursorColor = Color(0xFF7FD1FF))
+                                )
+                                Button(onClick = { runTerminalCommand() }, enabled = !terminalRunning,
+                                    modifier = Modifier.clip(RoundedCornerShape(8.dp))) {
+                                    Text(if (terminalRunning) "运行中…" else "运行")
+                                }
+                            }
+                        }
                     }
                 }
             }
