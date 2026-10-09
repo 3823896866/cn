@@ -811,30 +811,30 @@ class FloatingWindowService : Service() {
     /** Shizuku 是否已授权本应用（写入目标游戏目录必须）。 */
     private fun shizukuGranted(): Boolean = try { rikka.shizuku.Shizuku.checkSelfPermission() == 0 } catch (e: Throwable) { false }
 
-    /** 注入：按所选文件 + 导入方式，导入到后端配置的导入路径（自动解压 zip，同名替换）。需 Shizuku 授权。 */
+    /** 注入：按所选文件 + 导入方式，用 Shizuku 提权真实写入目标游戏目录。结果走系统 Toast（可靠）+ 悬浮 Toast。 */
     private fun runInject(buttonName: String) {
-        if (!shizukuGranted()) {
-            showFloatToast("需先获取 Shizuku 权限：到「权限」页点 启动 Shizuku → 授权；未授权无法写入目标游戏目录"); return
-        }
         val zone = currentFormZone ?: return
         val st = formState.getOrPut(zone) { FormState() }
         val sel = st.selectedFile
-        if (sel == null) { showFloatToast("请先选择一个已下载的文件"); return }
+        if (sel == null) { notifyInject("请先选择一个已下载的文件"); return }
         if (!com.mikasa.ui.FilesApi.isDownloaded(applicationContext, sel)) {
-            showFloatToast("该文件尚未下载，请到「文件」页下载后再注入"); return
+            notifyInject("「${sel.name}」尚未下载，请到「文件」页下载后再注入"); return
         }
         val path = if (st.importDefault) formSettings?.importPathDefault else formSettings?.importPathPak
         if (path.isNullOrBlank()) {
-            showFloatToast("后端未配置导入路径（${if (st.importDefault) "默认" else "pak"}）"); return
+            notifyInject("后端未配置导入路径（${if (st.importDefault) "默认" else "pak"}）"); return
         }
-        val targetDir = File(path)
+        notifyInject("开始注入「${sel.name}」→ 目标目录…")
         Thread {
-            val n = com.mikasa.ui.FilesApi.inject(applicationContext, sel, targetDir)
-            mainHandler.post {
-                if (n < 0) showFloatToast("导入失败：下载/写入出错")
-                else showFloatToast("已导入 $n 个文件 → $path（同名已替换）")
-            }
+            val (ok, msg) = com.mikasa.ui.ShizukuOps.shizukuInject(applicationContext, sel.name, path) {}
+            mainHandler.post { notifyInject(msg) }
         }.start()
+    }
+
+    /** 注入/权限反馈：同时用系统 Toast（一定显示）+ 悬浮 Toast，杜绝“没反应、没提示”。 */
+    private fun notifyInject(msg: String) {
+        showFloatToast(msg)
+        runCatching { Toast.makeText(applicationContext, msg, Toast.LENGTH_LONG).show() }
     }
 
     private fun miscPageItems(): List<FunctionAdapter.FunctionItem> {
