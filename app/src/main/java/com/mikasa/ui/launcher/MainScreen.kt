@@ -1139,8 +1139,7 @@ private fun PermissionsPage() {
                                     modifier = Modifier.weight(1f).clip(RoundedCornerShape(8.dp)),
                                     singleLine = true,
                                     placeholder = { Text("小染注入权限", fontSize = 12.sp, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace) },
-                                    textStyle = androidx.compose.ui.text.TextStyle(androidx.compose.ui.text.font.FontFamily.Monospace, 13.sp, Color(0xFFE6EDF3)),
-                                    colors = androidx.compose.material3.TextFieldDefaults.colors(containerColor = Color(0xFF1A1F2B), cursorColor = Color(0xFF7FD1FF))
+                                    textStyle = androidx.compose.ui.text.TextStyle(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, fontSize = 13.sp, color = Color(0xFFE6EDF3))
                                 )
                                 Button(onClick = { runTerminalCommand() }, enabled = !terminalRunning,
                                     modifier = Modifier.clip(RoundedCornerShape(8.dp))) {
