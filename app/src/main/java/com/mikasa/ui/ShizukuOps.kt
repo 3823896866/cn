@@ -44,7 +44,7 @@ object ShizukuOps {
             }
             val code = proc.waitFor()
             runCatching { proc.destroy() }
-            Triple(code == 0, code, ((out + " " + err).toString().trim().take(600)))
+            Triple(code == 0, code, ((out.toString() + " " + err.toString()).trim().take(600)))
         } catch (e: Throwable) {
             Triple(false, -1, "异常：${e.message ?: e.javaClass.simpleName}")
         }
