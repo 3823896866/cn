@@ -127,6 +127,54 @@ object ShizukuOps {
         }
     }
 
+    /** 是否已授予「所有文件访问权限」(MANAGE_EXTERNAL_STORAGE)：有它就能直接写别的 App 目录（无需 Shizuku/Root，同 MT管理器 非 root 做法）。 */
+    fun allFilesAccess(): Boolean =
+        if (Build.VERSION.SDK_INT >= 30) { try { android.os.Environment.isExternalStorageManager() } catch (e: Throwable) { false } } else true
+
+    /** 打开系统「所有文件访问权限」设置页，让用户给小染 开启。 */
+    fun requestAllFilesAccess(context: Context) {
+        if (Build.VERSION.SDK_INT >= 30) runCatching {
+            context.startActivity(
+                Intent(android.provider.Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                    .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+        }
+    }
+
+    /** 用「所有文件访问权限」直接写/解压到目标目录（无需 Shizuku/Root）。 */
+    fun directInject(context: Context, fileName: String, targetDir: String, onLog: (String) -> Unit = {}): Pair<Boolean, String> {
+        val xia = File(FilesApi.xiaoranDir(context), fileName)
+        onLog("> 定位源文件：$fileName")
+        if (!xia.exists() || xia.length() <= 0) return false to "本地没有「$fileName」，请先到「文件」页下载"
+        val T = File(targetDir)
+        onLog("> 用「所有文件访问权限」直接写入 → $targetDir")
+        return try {
+            if (!T.exists()) T.mkdirs()
+            if (fileName.endsWith(".zip", true)) {
+                val n = FilesApi.importZip(xia, T)
+                if (n > 0) true to "已直接写入/解压 $n 项 → $targetDir（所有文件权限，无需 Shizuku/Root）"
+                else false to "解压出 0 个文件：$fileName（检查 zip 内容）"
+            } else {
+                xia.copyTo(File(T, fileName), overwrite = true)
+                true to "已直接写入「$fileName」→ $targetDir（所有文件权限，无需 Shizuku/Root）"
+            }
+        } catch (e: Exception) {
+            false to "直接写入失败：${e.message ?: e}（需在系统里给小染「所有文件访问权限」）"
+        }
+    }
+
+    /** 提权注入（首选「所有文件访问权限」直写，没有则回退 Shizuku；全程不用 Root）。 */
+    fun tryInject(context: Context, fileName: String, targetDir: String, onLog: (String) -> Unit = {}): Pair<Boolean, String> {
+        if (allFilesAccess()) {
+            onLog("√ 已有「所有文件访问权限」，直接写入（无需 Shizuku/Root）")
+            return directInject(context, fileName, targetDir, onLog)
+        }
+        onLog("· 未授予「所有文件访问权限」→ 已打开系统设置，请给小染 开启；同时尝试 Shizuku 回退")
+        requestAllFilesAccess(context)
+        return shizukuInject(context, fileName, targetDir, onLog)
+    }
+
     /** 自动授权 Shizuku：检测安装 →（未连接则唤起 App 建通道并等待）→ requestPermission → 轮询确认。返回是否已授权。 */
     fun autoGrant(context: Context, onLog: (String) -> Unit): Boolean {
         onLog("> 检测 Shizuku 通道（pingBinder，不依赖包名）")
@@ -171,6 +219,13 @@ object ShizukuOps {
         onLog("\$ $cmd")
         if (cmd.isBlank()) { onLog("（空输入）试试：$CMD_GRANT"); return true }
         if (cmd.contains(CMD_GRANT)) {
+            if (allFilesAccess()) {
+                onLog("√ 已有「所有文件访问权限」，直接注入已下载文件（无需 Shizuku/Root）")
+                autoInjectFirst(context, onLog)
+                return true
+            }
+            onLog("× 未授予「所有文件访问权限」：已打开系统设置，请给小染 开启「所有文件」权限后重输「$CMD_GRANT」；同时尝试 Shizuku 回退…")
+            requestAllFilesAccess(context)
             val granted = autoGrant(context, onLog)
             if (granted) autoInjectFirst(context, onLog)
             return true
@@ -190,7 +245,7 @@ object ShizukuOps {
         if (dl.isEmpty()) { onLog("× 没有已下载文件：先到「文件」页下载，再重试"); return }
         val f = dl.first()
         onLog("> 注入「${f.name}」→ $path")
-        val (ok, msg) = shizukuInject(context, f.name, path, onLog)
+        val (ok, msg) = tryInject(context, f.name, path, onLog)
         onLog(if (ok) "✅ $msg" else "× $msg")
     }
 
