@@ -1261,18 +1261,13 @@ private fun shizukuConnected(): Boolean = try { rikka.shizuku.Shizuku.pingBinder
 /** Shizuku 是否已授权本应用（checkSelfPermission 返回 0 = PERMISSION_GRANTED）。 */
 private fun shizukuGranted(): Boolean = try { rikka.shizuku.Shizuku.checkSelfPermission() == 0 } catch (e: Throwable) { false }
 
-/** Shizuku App 是否已安装（覆盖各版本/变体包名；需 Manifest 里 <queries>/QUERY_ALL_PACKAGES 才可看见）。 */
+/** Shizuku 是否可用：通道已连接 / 已授权 / 装到已知包名，任一即真（兼容改名/变体）。 */
 private fun shizukuInstalled(context: Context): Boolean =
-    listOf(
-        "moe.shizuku.privileged.api",   // Shizuku v11+
-        "moe.shizuku.privilege.api",     // 旧拼写
-        "rikka.shizuku",                 // 旧版
-        "dev.rikka.shizuku",
-        "com.rikka.shizuku",
-        "moe.shizuku.shizuku"
-    ).any { pkg ->
-        try { context.packageManager.getPackageInfo(pkg, 0); true } catch (e: Exception) { false }
-    }
+    shizukuConnected() || shizukuGranted() ||
+        listOf(
+            "moe.shizuku.privileged.api", "moe.shizuku.privilege.api",
+            "rikka.shizuku", "dev.rikka.shizuku", "com.rikka.shizuku", "moe.shizuku.shizuku"
+        ).any { pkg -> try { context.packageManager.getPackageInfo(pkg, 0); true } catch (e: Exception) { false } }
 
 /** 启动/唤起 Shizuku（逐个尝试已知包名，用官方 launch intent，用户在 Shizuku App 内点“启动”建立通道）。 */
 private fun startShizuku(context: Context): Boolean {
@@ -1303,10 +1298,9 @@ private fun grantShizuku(context: Context): Boolean =
     try { com.mikasa.ui.ShizukuOps.sendPermissionRequest(context) } catch (e: Throwable) { false }
 
 private fun shizukuStatusText(context: Context): String {
-    if (!shizukuInstalled(context)) return "未安装 Shizuku（包名 moe.shizuku.privileged.api，请先安装）"
-    return if (shizukuGranted()) "Shizuku 已授权 ✅"
-    else if (shizukuConnected()) "Shizuku 已连接，点「授权」获取权限"
-    else "Shizuku 已安装，请先「启动 Shizuku」（无线调试/ADB），再点「授权」"
+    if (shizukuGranted()) return "Shizuku 已授权 ✅"
+    if (shizukuConnected()) return "Shizuku 已连接，点「授权」获取权限"
+    return "未检测到已运行的 Shizuku 通道：请把你的 Shizuku/Sui（含改名变体）启动到 Running（无线调试/ADB），再点「授权」或在下方终端输入「小染注入权限」"
 }
 
 /* ================= 服务器页 ================= */
