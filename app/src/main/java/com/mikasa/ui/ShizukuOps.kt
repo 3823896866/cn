@@ -134,7 +134,7 @@ object ShizukuOps {
         if (!connected) {
             onLog("· 通道未连接，尝试唤起已知的 Shizuku/Sui…")
             startShizuku(context)
-            repeat(24) { Thread.sleep(500); if (shizukuConnected()) { connected = true; break } }
+            repeat(24) { Thread.sleep(500); if (shizukuConnected()) { connected = true; return@repeat } }
         }
         if (!connected) {
             onLog("× 通道仍连不上：请手动把你的 Shizuku（或 Sui / WebNex 里的 Shizuku）启动到 Running（无线调试/ADB/Root）。\n通道不 Running，授权请求就发不出去——这是 Shizuku 机制、App 绕不过。启动好后重输「$CMD_GRANT」。")
@@ -156,7 +156,7 @@ object ShizukuOps {
         var connected = shizukuConnected()
         if (!connected) {
             startShizuku(context)
-            repeat(12) { Thread.sleep(500); if (shizukuConnected()) { connected = true; break } }
+            repeat(12) { Thread.sleep(500); if (shizukuConnected()) { connected = true; return@repeat } }
         }
         if (!connected) return false
         runCatching { Shizuku.requestPermission(2001) }
