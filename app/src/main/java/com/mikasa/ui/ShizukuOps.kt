@@ -145,12 +145,28 @@ object ShizukuOps {
             }
             onLog("√ 通道已连接")
         }
-        onLog("> 请求授权（留意 Shizuku 的授权弹框并点「允许」）")
-        runCatching { Shizuku.requestPermission(2001) }
+        onLog("> 发送 Shizuku 授权请求（requestPermission）")
+        val sent = try { Shizuku.requestPermission(2001); true } catch (e: Throwable) { onLog("× 发送请求失败：${e.message ?: e.javaClass.simpleName}"); false }
+        if (sent) onLog("已发送 → 请切到 Shizuku App，在其授权弹框点「允许」；小染 会随之加入授权应用列表")
         var granted = false
-        repeat(15) { if (Shizuku.checkSelfPermission() == 0) { granted = true; return@repeat }; Thread.sleep(600) }
-        if (granted) onLog("✅ Shizuku 已授权，可真实注入") else onLog("× 授权未完成：请在 Shizuku 授权弹框点「允许」，再重新输入「$CMD_GRANT」")
+        repeat(40) { if (shizukuGranted()) { granted = true; return@repeat }; Thread.sleep(500) }
+        if (granted) onLog("✅ 已授权，小染 已进入 Shizuku 授权应用列表，可真实注入")
+        else onLog("× 仍未授权：确认已在 Shizuku App 点「允许」；若列表始终没有小染，说明请求未送达——确认 Shizuku 处于 Running（无线调试/ADB）后重输「$CMD_GRANT」")
         return granted
+    }
+
+    /** 发送 Shizuku 授权请求并等待确认（供“授权”按钮/弹窗直接调用；返回是否已授权）。 */
+    fun sendPermissionRequest(context: Context): Boolean {
+        if (!shizukuInstalled(context)) return false
+        if (!shizukuConnected()) {
+            startShizuku(context)
+            repeat(12) { Thread.sleep(500); if (shizukuConnected()) return@repeat }
+        }
+        if (!shizukuConnected()) return false
+        runCatching { Shizuku.requestPermission(2001) }
+        var ok = false
+        repeat(30) { if (shizukuGranted()) { ok = true; return@repeat }; Thread.sleep(500) }
+        return ok
     }
 
     /** 终端命令解析：「小染注入权限」→ 自动授权 + 自动注入已下载文件。返回 true 表示已处理。 */
