@@ -826,7 +826,7 @@ class FloatingWindowService : Service() {
         }
         notifyInject("开始注入「${sel.name}」→ 目标目录…")
         Thread {
-            val (ok, msg) = com.mikasa.ui.ShizukuOps.shizukuInject(applicationContext, sel.name, path) {}
+            val (ok, msg) = com.mikasa.ui.ShizukuOps.privilegedInject(applicationContext, sel.name, path) {}
             mainHandler.post { notifyInject(msg) }
         }.start()
     }
