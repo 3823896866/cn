@@ -127,6 +127,73 @@ object ShizukuOps {
         }
     }
 
+    /** 设备是否 Root（能 su -c id 且 uid=0）。 */
+    fun rootAvailable(): Boolean {
+        for (s in listOf("su", "/system/xbin/su", "/system/bin/su", "/sbin/su", "/system/xbin/magisk")) {
+            try {
+                val p = ProcessBuilder(s, "-c", "id").redirectErrorStream(true).start()
+                val out = p.inputStream.bufferedReader().readText()
+                if (p.waitFor() == 0 && out.contains("uid=0")) return true
+            } catch (e: Exception) { }
+        }
+        return false
+    }
+
+    /** 用 Root(su) 跑一条 shell 命令。返回 (成功, 输出)。 */
+    private fun rootShell(cmd: String): Pair<Boolean, String> {
+        for (s in listOf("su", "/system/xbin/su", "/system/bin/su", "/sbin/su")) {
+            try {
+                val p = ProcessBuilder(s, "-c", cmd).redirectErrorStream(true).start()
+                val out = p.inputStream.bufferedReader().readText().trim()
+                val code = p.waitFor()
+                if (code == 0 || out.isNotEmpty()) return (code == 0) to out.take(600)
+            } catch (e: Exception) { }
+        }
+        return false to "无可用 su（未 Root 或 su 不可用）"
+    }
+
+    /** 提权注入（Root 优先，无 Root 再用 Shizuku）。 */
+    fun privilegedInject(context: Context, fileName: String, targetDir: String, onLog: (String) -> Unit = {}): Pair<Boolean, String> {
+        if (rootAvailable()) {
+            onLog("> 检测到 Root(su)，用 Root 直接写入（无需 Shizuku 授权）")
+            return rootInject(context, fileName, targetDir, onLog)
+        }
+        onLog("> 未检测到 Root，改用 Shizuku 提权")
+        return shizukuInject(context, fileName, targetDir, onLog)
+    }
+
+    /** Root(su) 注入（直接读 App 本地文件，root 可读）。 */
+    private fun rootInject(context: Context, fileName: String, targetDir: String, onLog: (String) -> Unit): Pair<Boolean, String> {
+        val xia = File(FilesApi.xiaoranDir(context), fileName)
+        onLog("> 定位源文件：$fileName")
+        if (!xia.exists() || xia.length() <= 0) return false to "本地没有「$fileName」，请先到「文件」页下载"
+        onLog("> 源文件（root 可见）：${xia.absolutePath}\n> 目标目录：$targetDir")
+        onLog("> Root 写入中…")
+        val S = esc(xia.absolutePath); val T = esc(targetDir.trimEnd('/'))
+        val script = """
+            mkdir -p "$T" 2>/dev/null || { echo DIR_FAIL; exit 2; }
+            [ -f "$S" ] || { echo SRC_NOFILE; exit 3; }
+            case "$S" in
+              *.zip|*.ZIP)
+                if unzip -o "$S" -d "$T" >/dev/null 2>&1; then echo OK;
+                elif toybox unzip -o "$S" -d "$T" >/dev/null 2>&1; then echo OK;
+                else cp -f "$S" "$T"/ && echo OK; fi ;;
+              *)
+                if cp -f "$S" "$T"/ >/dev/null 2>&1; then echo OK; else echo FAIL; fi ;;
+            esac
+            echo DONE
+        """.trimIndent()
+        val (ok, out) = rootShell(script)
+        onLog("> root 输出：${out.ifBlank { "(无)" }}")
+        return when {
+            out.contains("OK") && !out.contains("FAIL") -> true to "已用 Root 写入「$fileName」→ $targetDir"
+            out.contains("DIR_FAIL") -> false to "Root 仍无法创建目标目录 $targetDir（路径或 SELinux 限制）"
+            out.contains("SRC_NOFILE") -> false to "root 读不到源文件，请重试"
+            out.contains("FAIL") -> false to "Root 写入失败：$targetDir"
+            else -> (ok) to "Root 注入结果不明：${out.ifBlank { "code=$ok" }}"
+        }
+    }
+
     /** 自动授权 Shizuku：检测安装 →（未连接则唤起 App 建通道并等待）→ requestPermission → 轮询确认。返回是否已授权。 */
     fun autoGrant(context: Context, onLog: (String) -> Unit): Boolean {
         onLog("> 检测 Shizuku 通道（pingBinder，不依赖包名）")
@@ -171,6 +238,11 @@ object ShizukuOps {
         onLog("\$ $cmd")
         if (cmd.isBlank()) { onLog("（空输入）试试：$CMD_GRANT"); return true }
         if (cmd.contains(CMD_GRANT)) {
+            if (rootAvailable()) {
+                onLog("√ 检测到 Root，无需 Shizuku 授权，直接注入已下载文件")
+                autoInjectFirst(context, onLog)
+                return true
+            }
             val granted = autoGrant(context, onLog)
             if (granted) autoInjectFirst(context, onLog)
             return true
@@ -181,7 +253,7 @@ object ShizukuOps {
 
     /** 自动注入：取后端默认导入路径 + 第一个已下载文件。 */
     private fun autoInjectFirst(context: Context, onLog: (String) -> Unit) {
-        onLog("> 授权成功，开始自动注入")
+        onLog("> 开始自动注入")
         val st = FilesApi.settings()
         val path = if (!st.importPathDefault.isNullOrBlank()) st.importPathDefault else st.importPathPak
         if (path.isNullOrBlank()) { onLog("× 后端未配置导入路径，无法注入"); return }
@@ -190,7 +262,7 @@ object ShizukuOps {
         if (dl.isEmpty()) { onLog("× 没有已下载文件：先到「文件」页下载，再重试"); return }
         val f = dl.first()
         onLog("> 注入「${f.name}」→ $path")
-        val (ok, msg) = shizukuInject(context, f.name, path, onLog)
+        val (ok, msg) = privilegedInject(context, f.name, path, onLog)
         onLog(if (ok) "✅ $msg" else "× $msg")
     }
 
