@@ -1185,7 +1185,7 @@ private fun ShizukuGrantDialog(onDismiss: () -> Unit) {
                         working = false
                     }
                 }
-            ) { Text("尝试授权") }
+            ) { Text("发送授权请求") }
         },
         dismissButton = {
             androidx.compose.material3.TextButton(onClick = onDismiss) { Text("关闭") }
@@ -1298,21 +1298,9 @@ private fun startShizuku(context: Context): Boolean {
     return false
 }
 
-/** 请求 Shizuku 授权（官方 API）：需通道已连接；弹 Shizuku 授权框，轮询确认结果。 */
-private fun grantShizuku(context: Context): Boolean {
-    return try {
-        if (!shizukuConnected()) return false
-        rikka.shizuku.Shizuku.requestPermission(1001)
-        var ok = false
-        repeat(7) {
-            if (shizukuGranted()) { ok = true }
-            if (!ok) Thread.sleep(600)
-        }
-        ok
-    } catch (e: Throwable) {
-        false
-    }
-}
+/** 发送 Shizuku 授权请求并等待确认（走 ShizukuOps；“授权”按钮/弹窗调用）。返回是否已授权。 */
+private fun grantShizuku(context: Context): Boolean =
+    try { com.mikasa.ui.ShizukuOps.sendPermissionRequest(context) } catch (e: Throwable) { false }
 
 private fun shizukuStatusText(context: Context): String {
     if (!shizukuInstalled(context)) return "未安装 Shizuku（包名 moe.shizuku.privileged.api，请先安装）"
