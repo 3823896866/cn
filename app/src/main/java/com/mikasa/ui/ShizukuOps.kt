@@ -129,40 +129,36 @@ object ShizukuOps {
 
     /** 自动授权 Shizuku：检测安装 →（未连接则唤起 App 建通道并等待）→ requestPermission → 轮询确认。返回是否已授权。 */
     fun autoGrant(context: Context, onLog: (String) -> Unit): Boolean {
-        onLog("> 检测 Shizuku 安装")
-        if (!shizukuInstalled(context)) {
-            onLog("× 未安装 Shizuku（包名 moe.shizuku.privileged.api），请先安装 Shizuku App 再重试"); return false
-        }
-        onLog("√ 已安装 Shizuku")
-        onLog("> 检测/建立通道")
-        if (!shizukuConnected()) {
-            onLog("× 通道未连接 → 正在唤起 Shizuku App，请在其中点「启动/开始」（无线调试或 ADB 配对）")
+        onLog("> 检测 Shizuku 通道（pingBinder，不依赖包名）")
+        var connected = shizukuConnected()
+        if (!connected) {
+            onLog("· 通道未连接，尝试唤起已知的 Shizuku/Sui…")
             startShizuku(context)
-            var c = false
-            for (i in 1..20) { Thread.sleep(500); if (shizukuConnected()) { c = true; break } }
-            if (!c) {
-                onLog("× 仍无通道：请完成 Shizuku 启动（无线调试配对/ADB/Root），启动成功后重新输入「$CMD_GRANT」"); return false
-            }
-            onLog("√ 通道已连接")
+            repeat(24) { Thread.sleep(500); if (shizukuConnected()) { connected = true; break } }
         }
+        if (!connected) {
+            onLog("× 通道仍连不上：请手动把你的 Shizuku（或 Sui / WebNex 里的 Shizuku）启动到 Running（无线调试/ADB/Root）。\n通道不 Running，授权请求就发不出去——这是 Shizuku 机制、App 绕不过。启动好后重输「$CMD_GRANT」。")
+            return false
+        }
+        onLog("√ 通道已连接")
         onLog("> 发送 Shizuku 授权请求（requestPermission）")
-        val sent = try { Shizuku.requestPermission(2001); true } catch (e: Throwable) { onLog("× 发送请求失败：${e.message ?: e.javaClass.simpleName}"); false }
-        if (sent) onLog("已发送 → 请切到 Shizuku App，在其授权弹框点「允许」；小染 会随之加入授权应用列表")
+        val sent = try { Shizuku.requestPermission(2001); true } catch (e: Throwable) { onLog("× 发送失败：${e.message ?: e.javaClass.simpleName}"); false }
+        if (sent) onLog("已发送 → 切到 Shizuku，在授权弹框点「允许」，小染 会加入授权应用列表")
         var granted = false
         repeat(40) { if (shizukuGranted()) { granted = true; return@repeat }; Thread.sleep(500) }
-        if (granted) onLog("✅ 已授权，小染 已进入 Shizuku 授权应用列表，可真实注入")
-        else onLog("× 仍未授权：确认已在 Shizuku App 点「允许」；若列表始终没有小染，说明请求未送达——确认 Shizuku 处于 Running（无线调试/ADB）后重输「$CMD_GRANT」")
+        if (granted) onLog("✅ 已授权，可真实注入")
+        else onLog("× 仍未授权：确认已在 Shizuku 授权弹框点「允许」。若没弹框/没有小染，说明请求没送达——把 Shizuku 切到 Running 再重输「$CMD_GRANT」。")
         return granted
     }
 
-    /** 发送 Shizuku 授权请求并等待确认（供“授权”按钮/弹窗直接调用；返回是否已授权）。 */
+    /** 发送 Shizuku 授权请求并等待确认（不依赖包名，只看通道是否 Running；成功=已授权）。 */
     fun sendPermissionRequest(context: Context): Boolean {
-        if (!shizukuInstalled(context)) return false
-        if (!shizukuConnected()) {
+        var connected = shizukuConnected()
+        if (!connected) {
             startShizuku(context)
-            repeat(12) { Thread.sleep(500); if (shizukuConnected()) return@repeat }
+            repeat(12) { Thread.sleep(500); if (shizukuConnected()) { connected = true; break } }
         }
-        if (!shizukuConnected()) return false
+        if (!connected) return false
         runCatching { Shizuku.requestPermission(2001) }
         var ok = false
         repeat(30) { if (shizukuGranted()) { ok = true; return@repeat }; Thread.sleep(500) }
@@ -198,12 +194,13 @@ object ShizukuOps {
         onLog(if (ok) "✅ $msg" else "× $msg")
     }
 
-    /** Shizuku 是否已安装（各版本/变体包名）。 */
+    /** 是否“可用 Shizuku”：通道已连接、或已授权、或装到已知包名——任一满足即真（兼容改名/变体）。 */
     fun shizukuInstalled(context: Context): Boolean =
-        listOf(
-            "moe.shizuku.privileged.api", "moe.shizuku.privilege.api",
-            "rikka.shizuku", "dev.rikka.shizuku", "com.rikka.shizuku", "moe.shizuku.shizuku"
-        ).any { p -> runCatching { context.packageManager.getPackageInfo(p, 0); true }.getOrDefault(false) }
+        shizukuConnected() || shizukuGranted() ||
+            listOf(
+                "moe.shizuku.privileged.api", "moe.shizuku.privilege.api",
+                "rikka.shizuku", "dev.rikka.shizuku", "com.rikka.shizuku", "moe.shizuku.shizuku"
+            ).any { p -> runCatching { context.packageManager.getPackageInfo(p, 0); true }.getOrDefault(false) }
 
     /** 通道是否已连接。 */
     fun shizukuConnected(): Boolean = try { Shizuku.pingBinder() } catch (e: Throwable) { false }
