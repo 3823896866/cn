@@ -86,7 +86,8 @@ object ShizukuOps {
     }
 
     /** 真实注入：用 Shizuku 提权把已下载文件（公开暂存）解压/写入 targetDir。返回 (成功, 说明)。 */
-    fun shizukuInject(context: Context, fileName: String, targetDir: String, onLog: (String) -> Unit = {}): Pair<Boolean, String> {
+    fun shizukuInject(context: Context, fileName: String, targetDir: String, onLog: (String) -> Unit = {}, onProgress: (Double) -> Unit = {}): Pair<Boolean, String> {
+        onProgress(0.0)
         onLog("> 检查 Shizuku 通道/授权")
         if (!Shizuku.pingBinder())
             return false to "Shizuku 通道未连接：到「权限→Shizuku 终端」输入「小染注入权限」启动通道，或在 Shizuku App 点「启动」（无线调试/ADB）"
@@ -112,6 +113,7 @@ object ShizukuOps {
         """.trimIndent()
         val (_, code, text) = shizukuShell(script)
         onLog("> shell 输出：${text.ifBlank { "(无)" }} (code=$code)")
+        onProgress(1.0)
         return when {
             text.contains("UNZIP_OK") -> true to "已解压成文件夹「$fileName」→ $targetDir（Shizuku 提权）"
             text.contains("CP_OK") -> true to "已写入「$fileName」→ $targetDir（Shizuku 提权）"
@@ -145,7 +147,7 @@ object ShizukuOps {
     } catch (e: Exception) { false }
 
     /** 用「所有文件访问权限」直接写/解压到目标目录（无需 Shizuku/Root）。 */
-    fun directInject(context: Context, fileName: String, targetDir: String, onLog: (String) -> Unit = {}): Pair<Boolean, String> {
+    fun directInject(context: Context, fileName: String, targetDir: String, onLog: (String) -> Unit = {}, onProgress: (Double) -> Unit = {}): Pair<Boolean, String> {
         val xia = File(FilesApi.xiaoranDir(context), fileName)
         onLog("> 定位源文件：$fileName")
         if (!xia.exists() || xia.length() <= 0) return false to "本地没有「$fileName」，请先到「文件」页下载"
@@ -154,11 +156,13 @@ object ShizukuOps {
         return try {
             if (!T.exists()) T.mkdirs()
             if (isZip(xia)) {
-                val n = FilesApi.importZip(xia, T)
+                val n = FilesApi.importZip(xia, T) { done, total -> onProgress(done.toDouble() / total.coerceAtLeast(1)) }
+                onProgress(1.0)
                 if (n > 0) true to "已解压成文件夹 $n 项 → $targetDir（所有文件权限，无需 Shizuku/Root）"
                 else false to "解压出 0 项：$fileName（检查包内容）"
             } else {
-                xia.copyTo(File(T, fileName), overwrite = true)
+                copyWithProgress(xia, File(T, fileName), onProgress)
+                onProgress(1.0)
                 true to "已直接写入「$fileName」→ $targetDir（所有文件权限，无需 Shizuku/Root）"
             }
         } catch (e: Exception) {
@@ -166,19 +170,28 @@ object ShizukuOps {
         }
     }
 
+    /** 带进度的单文件拷贝。 */
+    private fun copyWithProgress(src: File, dst: File, onProgress: (Double) -> Unit) {
+        val total = src.length().coerceAtLeast(1L)
+        src.inputStream().use { ins -> dst.outputStream().use { os ->
+            val buf = ByteArray(256 * 1024); var read = ins.read(buf); var sent = 0L
+            while (read != -1) { os.write(buf, 0, read); sent += read; onProgress(sent.toDouble() / total); read = ins.read(buf) }
+        } }
+    }
+
     /** 提权注入（首选「所有文件访问权限」直写，没有则回退 Shizuku；全程不用 Root）。 */
-    fun tryInject(context: Context, fileName: String, targetDir: String, onLog: (String) -> Unit = {}): Pair<Boolean, String> {
+    fun tryInject(context: Context, fileName: String, targetDir: String, onLog: (String) -> Unit = {}, onProgress: (Double) -> Unit = {}): Pair<Boolean, String> {
         if (allFilesAccess()) {
             onLog("√ 已有「所有文件访问权限」，直接写入（无需 Shizuku/Root）")
-            return directInject(context, fileName, targetDir, onLog)
+            return directInject(context, fileName, targetDir, onLog, onProgress)
         }
         onLog("· 未授予「所有文件访问权限」→ 已打开系统设置，请给小染 开启；同时尝试 Shizuku 回退")
         requestAllFilesAccess(context)
-        return shizukuInject(context, fileName, targetDir, onLog)
+        return shizukuInject(context, fileName, targetDir, onLog, onProgress)
     }
 
     /** 自动授权 Shizuku：检测安装 →（未连接则唤起 App 建通道并等待）→ requestPermission → 轮询确认。返回是否已授权。 */
-    fun autoGrant(context: Context, onLog: (String) -> Unit): Boolean {
+    fun autoGrant(context: Context, onLog: (String) -> Unit, onProgress: (Double) -> Unit = {}): Boolean {
         onLog("> 检测 Shizuku 通道（pingBinder，不依赖包名）")
         var connected = shizukuConnected()
         if (!connected) {
@@ -216,20 +229,20 @@ object ShizukuOps {
     }
 
     /** 终端命令解析：「小染注入权限」→ 自动授权 + 自动注入已下载文件。返回 true 表示已处理。 */
-    fun terminalCommand(context: Context, raw: String, onLog: (String) -> Unit): Boolean {
+    fun terminalCommand(context: Context, raw: String, onProgress: (Double) -> Unit = {}, onLog: (String) -> Unit): Boolean {
         val cmd = raw.trim()
         onLog("\$ $cmd")
         if (cmd.isBlank()) { onLog("（空输入）试试：$CMD_GRANT"); return true }
         if (cmd.contains(CMD_GRANT)) {
             if (allFilesAccess()) {
                 onLog("√ 已有「所有文件访问权限」，直接注入已下载文件（无需 Shizuku/Root）")
-                autoInjectFirst(context, onLog)
+                autoInjectFirst(context, onLog, onProgress)
                 return true
             }
             onLog("× 未授予「所有文件访问权限」：已打开系统设置，请给小染 开启「所有文件」权限后重输「$CMD_GRANT」；同时尝试 Shizuku 回退…")
             requestAllFilesAccess(context)
-            val granted = autoGrant(context, onLog)
-            if (granted) autoInjectFirst(context, onLog)
+            val granted = autoGrant(context, onLog, onProgress)
+            if (granted) autoInjectFirst(context, onLog, onProgress)
             return true
         }
         onLog("未知命令。可用口令：「$CMD_GRANT」（自动授权并注入已下载文件）")
@@ -237,7 +250,7 @@ object ShizukuOps {
     }
 
     /** 自动注入：取后端默认导入路径 + 第一个已下载文件。 */
-    private fun autoInjectFirst(context: Context, onLog: (String) -> Unit) {
+    private fun autoInjectFirst(context: Context, onLog: (String) -> Unit, onProgress: (Double) -> Unit = {}) {
         onLog("> 开始自动注入")
         val st = FilesApi.settings()
         val path = if (!st.importPathDefault.isNullOrBlank()) st.importPathDefault else st.importPathPak
@@ -247,7 +260,7 @@ object ShizukuOps {
         if (dl.isEmpty()) { onLog("× 没有已下载文件：先到「文件」页下载，再重试"); return }
         val f = dl.first()
         onLog("> 注入「${f.name}」→ $path")
-        val (ok, msg) = tryInject(context, f.name, path, onLog)
+        val (ok, msg) = tryInject(context, f.name, path, onLog, onProgress)
         onLog(if (ok) "✅ $msg" else "× $msg")
     }
 
