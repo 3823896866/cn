@@ -154,11 +154,12 @@ object FilesApi {
         return "App 目录「小染注入」→ ${item.name}"
     }
 
-    /** 导入 zip：自动解压到 targetDir，同名文件直接覆盖。返回解压出的文件数。 */
-    fun importZip(zipFile: java.io.File, targetDir: java.io.File): Int {
+    /** 导入 zip：自动解压到 targetDir，同名文件直接覆盖。返回解压出的文件数；onProgress(done, total) 可回进度（null=不回调）。 */
+    fun importZip(zipFile: java.io.File, targetDir: java.io.File, onProgress: ((Int, Int) -> Unit)? = null): Int {
         if (!targetDir.exists()) targetDir.mkdirs()
         var count = 0
         java.util.zip.ZipFile(zipFile).use { zf ->
+            val total = zf.entries().asSequence().count { !it.isDirectory }
             val it = zf.entries()
             while (it.hasMoreElements()) {
                 val e = it.nextElement()
@@ -169,6 +170,7 @@ object FilesApi {
                 outFile.parentFile?.mkdirs()
                 zf.getInputStream(e).use { ins -> outFile.outputStream().use { ins.copyTo(it) } }
                 count++
+                onProgress?.invoke(count, total)
             }
         }
         return count
