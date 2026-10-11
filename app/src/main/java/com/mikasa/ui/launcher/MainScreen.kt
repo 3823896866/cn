@@ -1031,18 +1031,23 @@ private fun PermissionsPage() {
         var terminalInput by remember { mutableStateOf("") }
         var terminalRunning by remember { mutableStateOf(false) }
         var terminalLog by remember { mutableStateOf<List<String>>(emptyList()) }
+        var injectProgress by remember { mutableStateOf(-1f) }
         val termHandler = remember { android.os.Handler(android.os.Looper.getMainLooper()) }
         fun runTerminalCommand() {
             val cmd = terminalInput.trim()
             if (cmd.isBlank() || terminalRunning) return
             terminalRunning = true
+            injectProgress = 0f
             terminalLog = terminalLog + "\$ $cmd"
             scope.launch {
                 withContext(Dispatchers.IO) {
-                    com.mikasa.ui.ShizukuOps.terminalCommand(context, cmd) { line ->
+                    com.mikasa.ui.ShizukuOps.terminalCommand(context, cmd, onProgress = { p ->
+                        termHandler.post { injectProgress = p.coerceIn(0f, 1f) }
+                    }) { line ->
                         termHandler.post { terminalLog = terminalLog + line }
                     }
                 }
+                injectProgress = -1f
                 terminalInput = ""
                 terminalRunning = false
                 refreshShizuku()
@@ -1144,6 +1149,19 @@ private fun PermissionsPage() {
                                 Button(onClick = { runTerminalCommand() }, enabled = !terminalRunning,
                                     modifier = Modifier.clip(RoundedCornerShape(8.dp))) {
                                     Text(if (terminalRunning) "运行中…" else "运行")
+                                }
+                            }
+
+                            // 注入进度条（执行中显示；所有文件权限直写给精确百分比，Shizuku 回退给不定）
+                            if (terminalRunning && injectProgress >= 0f) {
+                                Spacer(Modifier.height(8.dp))
+                                Column(Modifier.fillMaxWidth()) {
+                                    androidx.compose.material3.LinearProgressIndicator(
+                                        progress = if (injectProgress > 1f) 1f else injectProgress,
+                                        modifier = Modifier.fillMaxWidth().height(6.dp)
+                                    )
+                                    Spacer(Modifier.height(2.dp))
+                                    Text("注入中 ${((injectProgress * 100).toInt()).coerceIn(0, 100)}%", fontSize = 11.sp, color = Color(0xFF7FD1FF))
                                 }
                             }
                         }
