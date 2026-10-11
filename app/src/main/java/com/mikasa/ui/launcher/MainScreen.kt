@@ -1042,7 +1042,7 @@ private fun PermissionsPage() {
             scope.launch {
                 withContext(Dispatchers.IO) {
                     com.mikasa.ui.ShizukuOps.terminalCommand(context, cmd, onProgress = { p ->
-                        termHandler.post { injectProgress = p.coerceIn(0f, 1f) }
+                        termHandler.post { injectProgress = p.coerceIn(0.0, 1.0).toFloat() }
                     }) { line ->
                         termHandler.post { terminalLog = terminalLog + line }
                     }
