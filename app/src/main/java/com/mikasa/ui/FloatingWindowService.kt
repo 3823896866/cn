@@ -743,12 +743,15 @@ class FloatingWindowService : Service() {
         fun getAdapter(index: Int): FunctionAdapter? = adapters.getOrNull(index)
     }
 
+    /** 注入实时进度（按钮副标题显示）。 */
+    private var injectNote: String? = null
+
     /** 功能/美化 表单页条目：注入按钮 + 导入方式(单选) + 文件(单选) */
     private fun formItemsForZone(zone: String): List<FunctionAdapter.FunctionItem> {
         val st = formState.getOrPut(zone) { FormState() }
         val items = mutableListOf<FunctionAdapter.FunctionItem>()
         items.add(FunctionAdapter.FunctionItem(zone, type = FunctionAdapter.TYPE_HEADER))
-        items.add(FunctionAdapter.FunctionItem("注入", type = FunctionAdapter.TYPE_BUTTON, subtitle = if (shizukuGranted()) "已授权 Shizuku" else "需 Shizuku 授权"))
+        items.add(FunctionAdapter.FunctionItem("注入", type = FunctionAdapter.TYPE_BUTTON, subtitle = injectNote ?: (if (shizukuGranted()) "已授权 Shizuku" else "需 Shizuku 授权")))
         items.add(FunctionAdapter.FunctionItem("导入方式", type = FunctionAdapter.TYPE_HEADER))
         items.add(FunctionAdapter.FunctionItem("默认导入", group = "import", isChecked = st.importDefault,
             type = FunctionAdapter.TYPE_RADIO, subtitle = importPathSubtitle(true)))
@@ -824,10 +827,26 @@ class FloatingWindowService : Service() {
         if (path.isNullOrBlank()) {
             notifyInject("后端未配置导入路径（${if (st.importDefault) "默认" else "pak"}）"); return
         }
-        notifyInject("开始注入「${sel.name}」→ 目标目录…")
+        notifyInject("开始注入「${sel.name}」…")
+        injectNote = "注入中 0%"
+        refreshFormPage()
+        var lastStep = -1
         Thread {
-            val (ok, msg) = com.mikasa.ui.ShizukuOps.tryInject(applicationContext, sel.name, path) {}
-            mainHandler.post { notifyInject(msg) }
+            val (_, msg) = com.mikasa.ui.ShizukuOps.tryInject(applicationContext, sel.name, path, onProgress = { p ->
+                val step = ((p * 20).toInt()).coerceIn(0, 20)
+                if (step != lastStep) {
+                    lastStep = step
+                    mainHandler.post {
+                        injectNote = if (p >= 1.0) "注入完成" else "注入中 ${(p * 100).toInt()}%"
+                        refreshFormPage()
+                    }
+                }
+            })
+            mainHandler.post {
+                injectNote = null
+                refreshFormPage()
+                notifyInject(msg)
+            }
         }.start()
     }
 
