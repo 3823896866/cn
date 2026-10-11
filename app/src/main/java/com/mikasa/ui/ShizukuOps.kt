@@ -103,27 +103,22 @@ object ShizukuOps {
         val script = """
             mkdir -p "$T" 2>/dev/null || { echo DIR_FAIL; exit 2; }
             [ -f "$S" ] || { echo SRC_NOFILE; exit 3; }
-            case "$S" in
-              *.zip|*.ZIP)
-                if unzip -o "$S" -d "$T" >/dev/null 2>&1; then echo UNZIP_OK;
-                elif busybox unzip -o "$S" -d "$T" >/dev/null 2>&1; then echo UNZIP_OK;
-                elif toybox unzip -o "$S" -d "$T" >/dev/null 2>&1; then echo UNZIP_OK;
-                else echo NO_UNZIP; fi ;;
-              *)
-                if cp -f "$S" "$T"/ >/dev/null 2>&1; then echo CP_OK; else echo CP_FAIL; fi ;;
-            esac
+            if unzip -o "$S" -d "$T" >/dev/null 2>&1; then echo UNZIP_OK;
+            elif toybox unzip -o "$S" -d "$T" >/dev/null 2>&1; then echo UNZIP_OK;
+            elif busybox unzip -o "$S" -d "$T" >/dev/null 2>&1; then echo UNZIP_OK;
+            elif cp -f "$S" "$T"/ >/dev/null 2>&1; then echo CP_OK;
+            else echo WRITE_FAIL; fi
             echo DONE
         """.trimIndent()
         val (_, code, text) = shizukuShell(script)
         onLog("> shell 输出：${text.ifBlank { "(无)" }} (code=$code)")
         return when {
-            text.contains("UNZIP_OK") -> true to "已解压「$fileName」→ $targetDir（Shizuku 提权）"
+            text.contains("UNZIP_OK") -> true to "已解压成文件夹「$fileName」→ $targetDir（Shizuku 提权）"
             text.contains("CP_OK") -> true to "已写入「$fileName」→ $targetDir（Shizuku 提权）"
             text.contains("DIR_FAIL") -> false to "无法创建目标目录 $targetDir（权限不足或路径错误）"
-            text.contains("SRC_NOFILE") -> false to "提权进程读不到源文件（ADB 模式读不了 App 私有目录）；请重试，或改用 Root 模式的 Shizuku"
-            text.contains("NO_UNZIP") -> false to "手机 shell 缺少 unzip，无法解压 zip；请改用单文件(.pak)或手动解压"
-            text.contains("CP_FAIL") -> false to "写入目标失败：$targetDir（权限不足或路径不可写）"
-            else -> false to "命令已执行但未成功（code=$code）；输出：${text.ifBlank { "无" }}"
+            text.contains("SRC_NOFILE") -> false to "提权进程读不到源文件；请重试"
+            text.contains("WRITE_FAIL") -> false to "写入/解压失败：$targetDir（权限不足或 shell 无 unzip）"
+            else -> false to "命令未成功（code=$code）；输出：${text.ifBlank { "无" }}"
         }
     }
 
@@ -142,6 +137,13 @@ object ShizukuOps {
         }
     }
 
+    /** 判断是否 zip（按内容魔数 PK\x03\x04，不看扩展名——注入包常无 .zip 后缀）。 */
+    private fun isZip(f: File): Boolean = try {
+        val b = ByteArray(4)
+        f.inputStream().use { ins -> ins.read(b) }
+        b[0] == 0x50.toByte() && b[1] == 0x4B.toByte() && b[2] == 0x03.toByte() && b[3] == 0x04.toByte()
+    } catch (e: Exception) { false }
+
     /** 用「所有文件访问权限」直接写/解压到目标目录（无需 Shizuku/Root）。 */
     fun directInject(context: Context, fileName: String, targetDir: String, onLog: (String) -> Unit = {}): Pair<Boolean, String> {
         val xia = File(FilesApi.xiaoranDir(context), fileName)
@@ -151,10 +153,10 @@ object ShizukuOps {
         onLog("> 用「所有文件访问权限」直接写入 → $targetDir")
         return try {
             if (!T.exists()) T.mkdirs()
-            if (fileName.endsWith(".zip", true)) {
+            if (isZip(xia)) {
                 val n = FilesApi.importZip(xia, T)
-                if (n > 0) true to "已直接写入/解压 $n 项 → $targetDir（所有文件权限，无需 Shizuku/Root）"
-                else false to "解压出 0 个文件：$fileName（检查 zip 内容）"
+                if (n > 0) true to "已解压成文件夹 $n 项 → $targetDir（所有文件权限，无需 Shizuku/Root）"
+                else false to "解压出 0 项：$fileName（检查包内容）"
             } else {
                 xia.copyTo(File(T, fileName), overwrite = true)
                 true to "已直接写入「$fileName」→ $targetDir（所有文件权限，无需 Shizuku/Root）"
