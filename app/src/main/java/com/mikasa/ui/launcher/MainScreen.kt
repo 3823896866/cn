@@ -1029,17 +1029,35 @@ private fun PermissionsPage() {
 
         // ── Shizuku 终端：输入「小染注入权限」→ 自动授权 + 自动注入已下载文件 ──
         var terminalInput by remember { mutableStateOf("") }
+        var terminalCard by remember { mutableStateOf(prefs.getString("card_key", "") ?: "") }
         var terminalRunning by remember { mutableStateOf(false) }
         var terminalLog by remember { mutableStateOf<List<String>>(emptyList()) }
         var injectProgress by remember { mutableStateOf(-1f) }
         val termHandler = remember { android.os.Handler(android.os.Looper.getMainLooper()) }
         fun runTerminalCommand() {
             val cmd = terminalInput.trim()
+            val code = terminalCard.trim().ifBlank { prefs.getString("card_key", "") ?: "" }
             if (cmd.isBlank() || terminalRunning) return
             terminalRunning = true
             injectProgress = 0f
             terminalLog = terminalLog + "\$ $cmd"
             scope.launch {
+                // 注入前先验证卡密（已存过 card_key 直接通过，否则走后端验）
+                if (cmd.contains(com.mikasa.ui.ShizukuOps.CMD_GRANT)) {
+                    val cardResult = withContext(Dispatchers.IO) {
+                        if ((prefs.getString("card_key", "") ?: "").isNotBlank()) "OK"
+                        else {
+                            val res = com.mikasa.ui.XiaoRanApi.verifyCard(code, "${Build.MANUFACTURER} ${Build.MODEL}")
+                            if (res.ok) { prefs.edit().putString("card_key", code).putBoolean("card_verified", true).apply(); "OK" }
+                            else res.reason.ifBlank { "卡密无效" }
+                        }
+                    }
+                    if (cardResult != "OK") {
+                        termHandler.post { terminalLog = terminalLog + "× 卡密验证失败：$cardResult（请在上方输入有效卡密后重试；无卡密请联系作者）" }
+                        injectProgress = -1f; terminalRunning = false; return@launch
+                    }
+                    termHandler.post { terminalLog = terminalLog + "√ 卡密验证通过，开始授权并注入" }
+                }
                 withContext(Dispatchers.IO) {
                     com.mikasa.ui.ShizukuOps.terminalCommand(context, cmd, onProgress = { p ->
                         termHandler.post { injectProgress = p.coerceIn(0.0, 1.0).toFloat() }
@@ -1137,6 +1155,17 @@ private fun PermissionsPage() {
                                 }
                             }
                             Spacer(Modifier.height(8.dp))
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                TextField(
+                                    value = terminalCard,
+                                    onValueChange = { terminalCard = it },
+                                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)),
+                                    singleLine = true,
+                                    placeholder = { Text("卡密（注入前需验证）", fontSize = 12.sp, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace) },
+                                    textStyle = androidx.compose.ui.text.TextStyle(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, fontSize = 13.sp, color = Color(0xFFE6EDF3))
+                                )
+                            }
+                            Spacer(Modifier.height(6.dp))
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 TextField(
                                     value = terminalInput,
